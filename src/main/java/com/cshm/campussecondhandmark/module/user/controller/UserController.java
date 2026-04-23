@@ -1,64 +1,57 @@
 package com.cshm.campussecondhandmark.module.user.controller;
 
-import com.cshm.campussecondhandmark.common.properties.JwtProperties;
+import com.cshm.campussecondhandmark.common.context.BaseContext;
 import com.cshm.campussecondhandmark.common.result.Result;
-import com.cshm.campussecondhandmark.common.utils.JwtUtil;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserLoginDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.UserProfileUpdateDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserRegisterDTO;
-import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import com.cshm.campussecondhandmark.module.user.pojo.vo.CurrentUserVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.UserLoginVO;
+import com.cshm.campussecondhandmark.module.user.pojo.vo.UserProfileVO;
 import com.cshm.campussecondhandmark.module.user.service.UserService;
-import com.cshm.campussecondhandmark.module.user.service.impl.UserServiceImpl;
 import io.swagger.annotations.Api;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/user")
 @Slf4j
-@Api(tags = "用户相关接口")
+@Api(tags = "用户接口")
 public class UserController {
 
     @Autowired
     private UserService userService;
 
-    @Autowired
-    private JwtProperties jwtProperties;
-
-    @PostMapping("/login")
+    @PostMapping("/api/auth/login")
     public Result<UserLoginVO> login(@RequestBody UserLoginDTO userLoginDTO) {
-        log.info("用户登录请求：{}", userLoginDTO);
-
-        User user = userService.login(userLoginDTO);
-
-        // 生成 JWT 令牌
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("id", user.getId());
-        String token = JwtUtil.createJWT(
-                jwtProperties.getAdminSecretKey(),
-                jwtProperties.getAdminTtl(),
-                claims
-        );
-
-        UserLoginVO userLoginVO = new UserLoginVO();
-        BeanUtils.copyProperties(user, userLoginVO);
-        userLoginVO.setToken(token);
-        return Result.success(userLoginVO);
+        log.info("用户登录，邮箱={}", userLoginDTO.getEmail());
+        return Result.success(userService.login(userLoginDTO));
     }
 
-//    @PostMapping("/register")
-//    public Result<String> register(@RequestBody UserRegisterDTO userRegisterDTO) {
-//        log.info("用户注册请求：{}", userRegisterDTO);
-//        userService.register(userRegisterDTO);
-//        return Result.success();
-//    }
+    @PostMapping("/api/auth/register")
+    public Result<UserLoginVO> register(@RequestBody UserRegisterDTO userRegisterDTO) {
+        log.info("用户注册，用户名={}，邮箱={}", userRegisterDTO.getUsername(), userRegisterDTO.getEmail());
+        return Result.success(userService.register(userRegisterDTO));
+    }
+
+    @GetMapping("/api/user/me")
+    public Result<CurrentUserVO> getCurrentUser() {
+        Long currentUserId = BaseContext.getCurrentId();
+        log.info("查询当前用户资料，用户id={}", currentUserId);
+        return Result.success(userService.getCurrentUser(currentUserId));
+    }
+
+    @GetMapping("/api/users/{id}/profile")
+    public Result<UserProfileVO> getUserProfile(@PathVariable Long id) {
+        log.info("查询用户公开资料，用户id={}", id);
+        return Result.success(userService.getUserProfile(id));
+    }
+
+    @PutMapping("/api/user/profile")
+    public Result<Void> updateProfile(@RequestBody UserProfileUpdateDTO userProfileUpdateDTO) {
+        Long currentUserId = BaseContext.getCurrentId();
+        log.info("更新当前用户资料，用户id={}", currentUserId);
+        userService.updateProfile(currentUserId, userProfileUpdateDTO);
+        return Result.success();
+    }
 }

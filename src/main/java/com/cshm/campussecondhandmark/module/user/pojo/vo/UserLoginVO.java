@@ -1,5 +1,6 @@
 package com.cshm.campussecondhandmark.module.user.pojo.vo;
 
+import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.AllArgsConstructor;
@@ -20,4 +21,7 @@ public class UserLoginVO {
 
     @ApiModelProperty(value = "JWT 令牌")
     private String token;
+
+    @ApiModelProperty(value = "用户角色")
+    private UserRoleEnum role;
 }

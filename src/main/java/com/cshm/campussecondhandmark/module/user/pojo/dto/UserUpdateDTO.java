@@ -1,0 +1,37 @@
+package com.cshm.campussecondhandmark.module.user.pojo.dto;
+
+import io.swagger.annotations.ApiModel;
+import io.swagger.annotations.ApiModelProperty;
+import lombok.Data;
+
+@Data
+@ApiModel(description = "用户更新参数")
+public class UserUpdateDTO {
+
+    @ApiModelProperty(value = "用户 ID", required = true, example = "1")
+    Long id;
+
+    @ApiModelProperty(value = "用户名", example = "zhangsan")
+    private String username;
+
+    @ApiModelProperty(value = "密码", example = "123456")
+    private String password;
+
+    @ApiModelProperty(value = "昵称", example = "张三")
+    private String nickname;
+
+    @ApiModelProperty(value = "邮箱", example = "xxx@gmail.com")
+    private String email;
+
+    @ApiModelProperty(value = "手机号", example = "13800000000")
+    private String phone;
+
+    @ApiModelProperty(value = "学号", example = "20240001")
+    private String studentNo;
+
+    @ApiModelProperty(value = "专业", example = "计算机科学与技术")
+    private String major;
+
+    @ApiModelProperty(value = "头像 URL", example = "http://example.com/avatar.jpg")
+    private String avatarUrl;
+}

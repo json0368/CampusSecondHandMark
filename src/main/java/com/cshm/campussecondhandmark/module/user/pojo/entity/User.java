@@ -1,6 +1,7 @@
 package com.cshm.campussecondhandmark.module.user.pojo.entity;
 
-import com.cshm.campussecondhandmark.common.entity.BaseEntity;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableName;
 import com.cshm.campussecondhandmark.module.user.enums.CampusVerifyStatusEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserStatusEnum;
@@ -11,14 +12,18 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
+@TableName("platform_user")
 @ApiModel(description = "用户实体类")
-public class User extends BaseEntity {
+public class User {
+
+    @ApiModelProperty(value = "用户 ID")
+    Long id;
 
     @ApiModelProperty(value = "用户姓名")
-    private String name;
+    private String username;
 
     @ApiModelProperty(value = "用户密码")
-    private String password;
+    private String passwordHash;
 
     @ApiModelProperty(value = "用户昵称")
     private String nickname;
@@ -30,13 +35,13 @@ public class User extends BaseEntity {
     private String phone;
 
     @ApiModelProperty(value = "用户学号")
-    private String student_no;
+    private String studentNo;
 
     @ApiModelProperty(value = "用户专业")
     private String major;
 
     @ApiModelProperty(value = "用户头像 URL")
-    private String avatar_url;
+    private String avatarUrl;
 
     @ApiModelProperty(value = "用户角色")
     private UserRoleEnum role;
@@ -45,8 +50,14 @@ public class User extends BaseEntity {
     private UserStatusEnum status;
 
     @ApiModelProperty(value = "用户校园认证状态")
-    private CampusVerifyStatusEnum verify_status;
+    private CampusVerifyStatusEnum campusVerifyStatus;
 
     @ApiModelProperty(value = "用户最后一次登录时间")
-    private LocalDateTime last_login_time;
+    private LocalDateTime lastLoginTime;
+
+    @ApiModelProperty(value = "用户创建时间")
+    LocalDateTime createTime;
+
+    @ApiModelProperty(value = "用户更新时间")
+    LocalDateTime updateTime;
 }

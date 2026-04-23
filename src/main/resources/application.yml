@@ -11,12 +11,11 @@ cshm:
       username: root
       password: long5812
   jwt:
-    # 设置jwt签名加密时使用的秘钥
-    admin-secret-key: itcast
-    # 设置jwt过期时间
+    token-name: token
+    admin-secret-key: admin-secret
     admin-ttl: 7200000
-    # 设置前端传递过来的令牌名称
-    admin-token-name: token
+    user-secret-key: user-secret
+    user-ttl: 7200000
   upload:
     path: ${user.dir}/upload/
     public-prefix: http://localhost:${server.port}
