@@ -9,7 +9,7 @@ cshm:
       port: 3306
       database: cshm
       username: root
-      password: long5812
+      password: 123456
   jwt:
     token-name: token
     admin-secret-key: admin-secret

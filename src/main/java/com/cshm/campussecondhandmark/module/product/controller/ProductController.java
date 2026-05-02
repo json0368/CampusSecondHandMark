@@ -17,14 +17,10 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
+@RequestMapping("/api/products")
 @Slf4j
 @Api(tags = "商品接口")
 public class ProductController {
@@ -32,7 +28,7 @@ public class ProductController {
     @Autowired
     private ProductService productService;
 
-    @PostMapping("/api/products")
+    @PostMapping("")
     @ApiOperation(value = "发布商品", notes = "发布后进入待审核状态")
     @ApiImplicitParam(name = "token", value = "用户登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
     public Result<Long> createProduct(@ApiParam(value = "商品发布请求", required = true) @RequestBody ProductCreateDTO dto) {
@@ -41,7 +37,7 @@ public class ProductController {
         return Result.success(productService.createProduct(currentUserId, dto));
     }
 
-    @PutMapping("/api/products/{productId}")
+    @PutMapping("/{productId}")
     @ApiOperation(value = "修改商品", notes = "仅卖家可修改，修改后重新进入待审核状态")
     @ApiImplicitParam(name = "token", value = "用户登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
     public Result<Void> updateProduct(
@@ -53,7 +49,7 @@ public class ProductController {
         return Result.success();
     }
 
-    @GetMapping("/api/products")
+    @GetMapping("")
     @ApiOperation(value = "分页查询商品", notes = "公开接口。可选携带 token，用于返回与当前用户相关的操作标记")
     @ApiImplicitParam(name = "token", value = "用户登录令牌，可选", required = false, paramType = "header", dataTypeClass = String.class)
     public Result<PageResult<ProductSummaryVO>> pageProducts(ProductSearchDTO dto) {
@@ -61,7 +57,7 @@ public class ProductController {
         return Result.success(productService.pageProducts(dto));
     }
 
-    @GetMapping("/api/products/{productId}")
+    @GetMapping("/{productId}")
     @ApiOperation(value = "获取商品详情", notes = "公开接口。卖家本人也可查看非公开商品详情")
     @ApiImplicitParam(name = "token", value = "用户登录令牌，可选", required = false, paramType = "header", dataTypeClass = String.class)
     public Result<ProductDetailVO> getProductDetail(
@@ -71,7 +67,7 @@ public class ProductController {
         return Result.success(productService.getProductDetail(productId, currentUserId));
     }
 
-    @GetMapping("/api/products/me")
+    @GetMapping("/me")
     @ApiOperation("分页查询当前用户商品")
     @ApiImplicitParam(name = "token", value = "用户登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
     public Result<PageResult<MyProductVO>> pageMyProducts(ProductQueryDTO dto) {
@@ -80,7 +76,7 @@ public class ProductController {
         return Result.success(productService.pageMyProducts(currentUserId, dto));
     }
 
-    @PostMapping("/api/products/{productId}/off-shelf")
+    @PostMapping("/{productId}/off-shelf")
     @ApiOperation(value = "主动下架商品", notes = "仅卖家本人可主动下架商品")
     @ApiImplicitParam(name = "token", value = "用户登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
     public Result<Void> offShelfProduct(

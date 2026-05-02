@@ -14,13 +14,10 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
+@RequestMapping("/admin-api/products")
 @Slf4j
 @Api(tags = "后台商品管理")
 public class AdminProductController {
@@ -28,7 +25,7 @@ public class AdminProductController {
     @Autowired
     private ProductService productService;
 
-    @GetMapping("/admin-api/products/audit")
+    @GetMapping("/audit")
     @ApiOperation(value = "分页查询商品审核列表", notes = "默认查询待审核商品，也可按审核状态筛选")
     @ApiImplicitParam(name = "token", value = "管理员登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
     public Result<PageResult<ProductAuditVO>> pageAuditProducts(ProductAuditQueryDTO dto) {
@@ -36,7 +33,7 @@ public class AdminProductController {
         return Result.success(productService.pageAuditProducts(dto));
     }
 
-    @PostMapping("/admin-api/products/{productId}/audit")
+    @PostMapping("/{productId}/audit")
     @ApiOperation(value = "审核商品", notes = "支持通过或驳回商品")
     @ApiImplicitParam(name = "token", value = "管理员登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
     public Result<Void> auditProduct(
@@ -48,7 +45,7 @@ public class AdminProductController {
         return Result.success();
     }
 
-    @PostMapping("/admin-api/products/{productId}/remove")
+    @PostMapping("/{productId}/remove")
     @ApiOperation(value = "强制下架商品", notes = "用于平台治理或违规商品处理")
     @ApiImplicitParam(name = "token", value = "管理员登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
     public Result<Void> removeProduct(
