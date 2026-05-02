@@ -39,3 +39,4 @@ mvnw.cmd
 .idea
 .mvn
 .mvn-cache
+.m2repo/

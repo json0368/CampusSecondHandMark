@@ -32,10 +32,10 @@ public class WebMvcConfiguration extends WebMvcConfigurationSupport {
 
     @Override
     protected void addInterceptors(InterceptorRegistry registry) {
-        log.info("开始注册拦截器");
+        log.info("注册自定义拦截器");
 
         registry.addInterceptor(jwtTokenUserInterceptor)
-                .addPathPatterns("/api/user/**")
+                .addPathPatterns("/api/user/**", "/api/products", "/api/products/**")
                 .excludePathPatterns(
                         "/doc.html",
                         "/webjars/**",
@@ -55,9 +55,9 @@ public class WebMvcConfiguration extends WebMvcConfigurationSupport {
     @Bean
     public Docket docket() {
         ApiInfo apiInfo = new ApiInfoBuilder()
-                .title("校园二手平台 API")
+                .title("校园二手交易与即时沟通平台 API 文档")
                 .version("1.0")
-                .description("校园二手平台 API")
+                .description("用于演示用户、商品、分类与后台审核接口")
                 .build();
         return new Docket(DocumentationType.SWAGGER_2)
                 .apiInfo(apiInfo)

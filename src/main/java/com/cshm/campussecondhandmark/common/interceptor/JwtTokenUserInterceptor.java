@@ -6,6 +6,7 @@ import com.cshm.campussecondhandmark.common.utils.JwtUtil;
 import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.util.StringUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -26,7 +27,12 @@ public class JwtTokenUserInterceptor implements HandlerInterceptor {
             return true;
         }
 
+        boolean publicProductRequest = isPublicProductRequest(request);
         String token = request.getHeader(jwtProperties.getTokenName());
+        if (publicProductRequest && !StringUtils.hasText(token)) {
+            return true;
+        }
+
         try {
             log.info("JWT token: {}", token);
             Claims claims = JwtUtil.parseJWT(jwtProperties.getUserSecretKey(), token);
@@ -40,9 +46,24 @@ public class JwtTokenUserInterceptor implements HandlerInterceptor {
             BaseContext.setCurrentId(userId);
             return true;
         } catch (Exception ex) {
+            if (publicProductRequest) {
+                return true;
+            }
             response.setStatus(401);
             return false;
         }
+    }
+
+    private boolean isPublicProductRequest(HttpServletRequest request) {
+        if (!"GET".equalsIgnoreCase(request.getMethod())) {
+            return false;
+        }
+        String path = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        if (StringUtils.hasText(contextPath) && path.startsWith(contextPath)) {
+            path = path.substring(contextPath.length());
+        }
+        return "/api/products".equals(path) || path.matches("^/api/products/\\d+$");
     }
 
     @Override
