@@ -5,11 +5,11 @@ cshm:
   datasource:
     druid:
       driver-class-name: com.mysql.cj.jdbc.Driver
-      host: localhost
+      host: 139.159.150.134
       port: 3306
       database: cshm
       username: root
-      password: 123456
+      password: long5812
   jwt:
     token-name: token
     admin-secret-key: admin-secret
