@@ -29,6 +29,7 @@ import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductSummaryVO;
 import com.cshm.campussecondhandmark.module.product.service.ProductService;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -416,15 +417,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 
     private ProductSummaryVO buildProductSummaryVO(Product product) {
         ProductSummaryVO vo = new ProductSummaryVO();
-        vo.setId(product.getId());
-        vo.setTitle(product.getTitle());
-        vo.setPrice(product.getPrice());
-        vo.setCoverImageUrl(product.getCoverImageUrl());
-        vo.setCategoryId(product.getCategoryId());
-        vo.setConditionLevel(product.getConditionLevel() == null ? null : product.getConditionLevel().getCode());
-        vo.setSellerId(product.getSellerId());
-        vo.setSaleStatus(product.getSaleStatus());
-        vo.setPublishTime(product.getPublishTime());
+        BeanUtils.copyProperties(product, vo);
         fillCategory(vo, product.getCategoryId());
         fillSeller(vo, product.getSellerId());
         return vo;
@@ -432,17 +425,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 
     private ProductDetailVO buildProductDetailVO(Product product, Long currentUserId, boolean visible) {
         ProductDetailVO vo = new ProductDetailVO();
-        vo.setId(product.getId());
-        vo.setSellerId(product.getSellerId());
-        vo.setCategoryId(product.getCategoryId());
-        vo.setTitle(product.getTitle());
-        vo.setDescription(product.getDescription());
-        vo.setPrice(product.getPrice());
-        vo.setConditionLevel(product.getConditionLevel() == null ? null : product.getConditionLevel().getCode());
-        vo.setCoverImageUrl(product.getCoverImageUrl());
-        vo.setSaleStatus(product.getSaleStatus());
-        vo.setPublishTime(product.getPublishTime());
-        vo.setImages(listProductImages(product.getId()));
+        BeanUtils.copyProperties(product, vo);
 
         ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
         if (category != null) {
@@ -463,28 +446,13 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 
     private MyProductVO buildMyProductVO(Product product) {
         MyProductVO vo = new MyProductVO();
-        vo.setId(product.getId());
-        vo.setTitle(product.getTitle());
-        vo.setPrice(product.getPrice( ));
-        vo.setCoverImageUrl(product.getCoverImageUrl());
-        vo.setAuditStatus(product.getAuditStatus());
-        vo.setSaleStatus(product.getSaleStatus());
-        vo.setRejectReason(product.getRejectReason());
-        vo.setPublishTime(product.getPublishTime());
-        vo.setUpdateTime(product.getUpdateTime());
+        BeanUtils.copyProperties(product, vo);
         return vo;
     }
 
     private ProductAuditVO buildProductAuditVO(Product product) {
         ProductAuditVO vo = new ProductAuditVO();
-        vo.setId(product.getId());
-        vo.setTitle(product.getTitle());
-        vo.setSellerId(product.getSellerId());
-        vo.setPrice(product.getPrice());
-        vo.setConditionLevel(product.getConditionLevel() == null ? null : product.getConditionLevel().getCode());
-        vo.setCoverImageUrl(product.getCoverImageUrl());
-        vo.setAuditStatus(product.getAuditStatus());
-        vo.setCreateTime(product.getCreateTime());
+        BeanUtils.copyProperties(product, vo);
 
         ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
         if (category != null) {

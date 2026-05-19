@@ -7,6 +7,7 @@ import com.cshm.campussecondhandmark.module.product.mapper.ProductCategoryMapper
 import com.cshm.campussecondhandmark.module.product.pojo.entity.ProductCategory;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductCategoryVO;
 import com.cshm.campussecondhandmark.module.product.service.ProductCategoryService;
+import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -29,10 +30,7 @@ public class ProductCategoryServiceImpl extends ServiceImpl<ProductCategoryMappe
 
     private ProductCategoryVO buildCategoryVO(ProductCategory category) {
         ProductCategoryVO vo = new ProductCategoryVO();
-        vo.setId(category.getId());
-        vo.setName(category.getName());
-        vo.setParentId(category.getParentId());
-        vo.setSortOrder(category.getSortOrder());
+        BeanUtils.copyProperties(category, vo);
         return vo;
     }
 }

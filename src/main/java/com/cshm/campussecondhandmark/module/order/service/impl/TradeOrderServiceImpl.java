@@ -16,9 +16,12 @@ import com.cshm.campussecondhandmark.module.product.enums.ProductAuditStatusEnum
 import com.cshm.campussecondhandmark.module.product.enums.ProductSaleStatusEnum;
 import com.cshm.campussecondhandmark.module.product.mapper.ProductMapper;
 import com.cshm.campussecondhandmark.module.product.pojo.entity.Product;
+import com.cshm.campussecondhandmark.module.review.mapper.TradeReviewMapper;
+import com.cshm.campussecondhandmark.module.review.pojo.entity.TradeReview;
 import com.cshm.campussecondhandmark.module.user.enums.UserStatusEnum;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +47,9 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
 
     @Autowired
     private UserMapper userMapper;
+
+    @Autowired
+    private TradeReviewMapper tradeReviewMapper;
 
     @Override
     @Transactional
@@ -291,16 +297,7 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
 
     private OrderSummaryVO buildOrderSummaryVO(TradeOrder order) {
         OrderSummaryVO vo = new OrderSummaryVO();
-        vo.setId(order.getId());
-        vo.setOrderNo(order.getOrderNo());
-        vo.setProductId(order.getProductId());
-        vo.setBuyerId(order.getBuyerId());
-        vo.setSellerId(order.getSellerId());
-        vo.setOrderAmount(order.getOrderAmount());
-        vo.setStatus(order.getStatus());
-        vo.setCreateTime(order.getCreateTime());
-        vo.setConfirmedTime(order.getConfirmedTime());
-        vo.setCompletedTime(order.getCompletedTime());
+        BeanUtils.copyProperties(order, vo);
 
         Product product = productMapper.selectById(order.getProductId());
         if (product != null) {
@@ -321,17 +318,7 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
 
     private OrderDetailVO buildOrderDetailVO(Long currentUserId, TradeOrder order) {
         OrderDetailVO vo = new OrderDetailVO();
-        vo.setId(order.getId());
-        vo.setOrderNo(order.getOrderNo());
-        vo.setProductId(order.getProductId());
-        vo.setBuyerId(order.getBuyerId());
-        vo.setSellerId(order.getSellerId());
-        vo.setOrderAmount(order.getOrderAmount());
-        vo.setStatus(order.getStatus());
-        vo.setCancelReason(order.getCancelReason());
-        vo.setCreateTime(order.getCreateTime());
-        vo.setConfirmedTime(order.getConfirmedTime());
-        vo.setCompletedTime(order.getCompletedTime());
+        BeanUtils.copyProperties(order, vo);
 
         Product product = productMapper.selectById(order.getProductId());
         if (product != null) {
@@ -355,7 +342,16 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
                 && (order.getStatus() == TradeOrderStatusEnum.PENDING_CONFIRM
                 || order.getStatus() == TradeOrderStatusEnum.IN_TRANSACTION));
         vo.setCanComplete(currentBuyer && order.getStatus() == TradeOrderStatusEnum.IN_TRANSACTION);
-        vo.setCanReview((currentBuyer || currentSeller) && order.getStatus() == TradeOrderStatusEnum.COMPLETED);
+        vo.setCanReview((currentBuyer || currentSeller)
+                && order.getStatus() == TradeOrderStatusEnum.COMPLETED
+                && !hasReviewed(currentUserId, order.getId()));
         return vo;
+    }
+
+    private boolean hasReviewed(Long currentUserId, Long orderId) {
+        LambdaQueryWrapper<TradeReview> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(TradeReview::getOrderId, orderId)
+                .eq(TradeReview::getReviewerId, currentUserId);
+        return tradeReviewMapper.selectCount(queryWrapper) > 0;
     }
 }
