@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cshm.campussecondhandmark.common.exception.BaseException;
 import com.cshm.campussecondhandmark.common.result.PageResult;
-import com.cshm.campussecondhandmark.module.product.enums.CategoryStatusEnum;
 import com.cshm.campussecondhandmark.module.product.enums.ProductAuditStatusEnum;
 import com.cshm.campussecondhandmark.module.product.enums.ProductConditionEnum;
 import com.cshm.campussecondhandmark.module.product.enums.ProductSaleStatusEnum;
@@ -35,13 +34,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
+@Transactional(readOnly = true)
 public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> implements ProductService {
 
     private static final int DEFAULT_PAGE_NUM = 1;
@@ -50,35 +52,27 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 
     @Autowired
     private ProductImageMapper productImageMapper;
-
     @Autowired
     private ProductCategoryMapper productCategoryMapper;
-
     @Autowired
     private UserMapper userMapper;
+
+    // ==================== 公开接口 ====================
 
     @Override
     @Transactional
     public Long createProduct(Long currentUserId, ProductCreateDTO dto) {
-        if (dto == null) {
-            throw new BaseException("商品信息不能为空");
-        }
-
-        ProductCategory category = getEnabledCategoryOrThrow(dto.getCategoryId());
-        String title = validateTitle(dto.getTitle());
-        BigDecimal price = validatePrice(dto.getPrice());
-        ProductConditionEnum condition = validateCondition(dto.getConditionLevel());
-        List<String> imageUrls = normalizeRequiredImageUrls(dto.getImageUrls());
-
+        ProductCategory category = getCategoryOrThrow(dto.getCategoryId());
         LocalDateTime now = LocalDateTime.now();
+
         Product product = new Product();
         product.setSellerId(currentUserId);
         product.setCategoryId(category.getId());
-        product.setTitle(title);
+        product.setTitle(trimToNull(dto.getTitle()));
         product.setDescription(trimToNull(dto.getDescription()));
-        product.setPrice(price);
-        product.setConditionLevel(condition);
-        product.setCoverImageUrl(imageUrls.get(0));
+        product.setPrice(dto.getPrice());
+        product.setConditionLevel(ProductConditionEnum.fromCode(dto.getConditionLevel()));
+        product.setCoverImageUrl(dto.getImageUrls().get(0));
         product.setAuditStatus(ProductAuditStatusEnum.PENDING);
         product.setSaleStatus(ProductSaleStatusEnum.DRAFT);
         product.setCreateTime(now);
@@ -87,40 +81,35 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         if (!save(product)) {
             throw new BaseException("商品发布失败");
         }
-        saveImages(product.getId(), imageUrls, now);
+        saveImages(product.getId(), dto.getImageUrls(), now);
         return product.getId();
     }
 
     @Override
     @Transactional
     public void updateProduct(Long currentUserId, Long productId, ProductUpdateDTO dto) {
-        if (dto == null) {
-            throw new BaseException("商品信息不能为空");
-        }
-
         Product product = getProductOrThrow(productId);
         validateSeller(currentUserId, product);
         validateCanEdit(product);
 
         if (dto.getCategoryId() != null) {
-            product.setCategoryId(getEnabledCategoryOrThrow(dto.getCategoryId()).getId());
+            product.setCategoryId(getCategoryOrThrow(dto.getCategoryId()).getId());
         }
         if (dto.getTitle() != null) {
-            product.setTitle(validateTitle(dto.getTitle()));
+            product.setTitle(trimToNull(dto.getTitle()));
         }
         if (dto.getDescription() != null) {
             product.setDescription(trimToNull(dto.getDescription()));
         }
         if (dto.getPrice() != null) {
-            product.setPrice(validatePrice(dto.getPrice()));
+            product.setPrice(dto.getPrice());
         }
         if (dto.getConditionLevel() != null) {
-            product.setConditionLevel(validateCondition(dto.getConditionLevel()));
+            product.setConditionLevel(ProductConditionEnum.fromCode(dto.getConditionLevel()));
         }
 
-        List<String> imageUrls = null;
-        if (dto.getImageUrls() != null) {
-            imageUrls = normalizeRequiredImageUrls(dto.getImageUrls());
+        List<String> imageUrls = dto.getImageUrls();
+        if (imageUrls != null) {
             product.setCoverImageUrl(imageUrls.get(0));
         }
 
@@ -162,13 +151,15 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
             queryWrapper.le(Product::getPrice, dto.getMaxPrice());
         }
         if (dto.getConditionLevel() != null) {
-            queryWrapper.eq(Product::getConditionLevel, validateCondition(dto.getConditionLevel()));
+            queryWrapper.eq(Product::getConditionLevel, ProductConditionEnum.fromCode(dto.getConditionLevel()));
         }
         queryWrapper.orderByDesc(Product::getPublishTime).orderByDesc(Product::getId);
 
         Page<Product> resultPage = page(page, queryWrapper);
+        Map<Long, ProductCategory> categoriesById = mapCategoriesById(extractIds(resultPage.getRecords(), Product::getCategoryId));
+        Map<Long, User> usersById = mapUsersById(extractIds(resultPage.getRecords(), Product::getSellerId));
         List<ProductSummaryVO> records = resultPage.getRecords().stream()
-                .map(this::buildProductSummaryVO)
+                .map(product -> buildProductSummaryVO(product, categoriesById, usersById))
                 .collect(Collectors.toList());
         return new PageResult<>(resultPage.getTotal(), records);
     }
@@ -221,8 +212,10 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         queryWrapper.orderByDesc(Product::getCreateTime).orderByDesc(Product::getId);
 
         Page<Product> resultPage = page(page, queryWrapper);
+        Map<Long, ProductCategory> categoriesById = mapCategoriesById(extractIds(resultPage.getRecords(), Product::getCategoryId));
+        Map<Long, User> usersById = mapUsersById(extractIds(resultPage.getRecords(), Product::getSellerId));
         List<ProductAuditVO> records = resultPage.getRecords().stream()
-                .map(this::buildProductAuditVO)
+                .map(product -> buildProductAuditVO(product, categoriesById, usersById))
                 .collect(Collectors.toList());
         return new PageResult<>(resultPage.getTotal(), records);
     }
@@ -230,12 +223,9 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     @Override
     @Transactional
     public void auditProduct(Long productId, ProductAuditDTO dto) {
-        if (dto == null || dto.getAuditStatus() == null) {
-            throw new BaseException("审核结果不能为空");
-        }
-
         Product product = getProductOrThrow(productId);
         LocalDateTime now = LocalDateTime.now();
+
         if (dto.getAuditStatus() == ProductAuditStatusEnum.APPROVED) {
             product.setAuditStatus(ProductAuditStatusEnum.APPROVED);
             product.setSaleStatus(ProductSaleStatusEnum.ON_SHELF);
@@ -243,9 +233,9 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
             product.setAuditTime(now);
             product.setPublishTime(now);
             product.setOffShelfTime(null);
-        } else if (dto.getAuditStatus() == ProductAuditStatusEnum.REJECTED) {
+        } else {
             String rejectReason = trimToNull(dto.getRejectReason());
-            if (!StringUtils.hasText(rejectReason)) {
+            if (rejectReason == null) {
                 throw new BaseException("驳回原因不能为空");
             }
             product.setAuditStatus(ProductAuditStatusEnum.REJECTED);
@@ -253,9 +243,8 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
             product.setRejectReason(rejectReason);
             product.setAuditTime(now);
             product.setPublishTime(null);
-        } else {
-            throw new BaseException("审核结果不正确");
         }
+
         product.setUpdateTime(now);
         if (!updateById(product)) {
             throw new BaseException("商品审核失败");
@@ -267,6 +256,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     public void offShelfProduct(Long currentUserId, Long productId) {
         Product product = getProductOrThrow(productId);
         validateSeller(currentUserId, product);
+
         if (product.getSaleStatus() == ProductSaleStatusEnum.REMOVED_BY_ADMIN) {
             throw new BaseException("管理员下架的商品不能操作");
         }
@@ -290,7 +280,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     @Transactional
     public void removeProductByAdmin(Long productId, String reason) {
         String removeReason = trimToNull(reason);
-        if (!StringUtils.hasText(removeReason)) {
+        if (removeReason == null) {
             throw new BaseException("下架原因不能为空");
         }
 
@@ -304,10 +294,9 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         }
     }
 
+    // ==================== 权限/状态校验 ====================
+
     private Product getProductOrThrow(Long productId) {
-        if (productId == null) {
-            throw new BaseException("商品不存在");
-        }
         Product product = getById(productId);
         if (product == null) {
             throw new BaseException("商品不存在");
@@ -315,13 +304,10 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         return product;
     }
 
-    private ProductCategory getEnabledCategoryOrThrow(Long categoryId) {
-        if (categoryId == null) {
-            throw new BaseException("商品分类不能为空");
-        }
+    private ProductCategory getCategoryOrThrow(Long categoryId) {
         ProductCategory category = productCategoryMapper.selectById(categoryId);
-        if (category == null || category.getStatus() != CategoryStatusEnum.ENABLED) {
-            throw new BaseException("商品分类不存在或已停用");
+        if (category == null) {
+            throw new BaseException("商品分类不存在");
         }
         return category;
     }
@@ -344,47 +330,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         }
     }
 
-    private String validateTitle(String title) {
-        String value = trimToNull(title);
-        if (!StringUtils.hasText(value)) {
-            throw new BaseException("商品标题不能为空");
-        }
-        if (value.length() > 128) {
-            throw new BaseException("商品标题不能超过128个字符");
-        }
-        return value;
-    }
-
-    private BigDecimal validatePrice(BigDecimal price) {
-        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BaseException("商品价格必须大于0");
-        }
-        return price;
-    }
-
-    private ProductConditionEnum validateCondition(Integer conditionLevel) {
-        ProductConditionEnum condition = ProductConditionEnum.fromCode(conditionLevel);
-        if (condition == null) {
-            throw new BaseException("商品成色不能为空");
-        }
-        return condition;
-    }
-
-    private List<String> normalizeRequiredImageUrls(List<String> imageUrls) {
-        List<String> result = new ArrayList<>();
-        if (imageUrls != null) {
-            for (String imageUrl : imageUrls) {
-                String value = trimToNull(imageUrl);
-                if (StringUtils.hasText(value)) {
-                    result.add(value);
-                }
-            }
-        }
-        if (result.isEmpty()) {
-            throw new BaseException("商品图片不能为空");
-        }
-        return result;
-    }
+    // ==================== 图片操作 ====================
 
     private void saveImages(Long productId, List<String> imageUrls, LocalDateTime now) {
         for (int i = 0; i < imageUrls.size(); i++) {
@@ -415,17 +361,29 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
                 .collect(Collectors.toList());
     }
 
-    private ProductSummaryVO buildProductSummaryVO(Product product) {
+    // ==================== VO 构建 ====================
+
+    private ProductSummaryVO buildProductSummaryVO(Product product, Map<Long, ProductCategory> categoriesById, Map<Long, User> usersById) {
         ProductSummaryVO vo = new ProductSummaryVO();
         BeanUtils.copyProperties(product, vo);
-        fillCategory(vo, product.getCategoryId());
-        fillSeller(vo, product.getSellerId());
+        vo.setConditionLevel(conditionCode(product));
+        ProductCategory category = categoriesById.get(product.getCategoryId());
+        if (category != null) {
+            vo.setCategoryName(category.getName());
+        }
+        User seller = usersById.get(product.getSellerId());
+        if (seller != null) {
+            vo.setSellerNickname(seller.getNickname());
+            vo.setSellerCampusVerifyStatus(seller.getCampusVerifyStatus());
+        }
         return vo;
     }
 
     private ProductDetailVO buildProductDetailVO(Product product, Long currentUserId, boolean visible) {
         ProductDetailVO vo = new ProductDetailVO();
         BeanUtils.copyProperties(product, vo);
+        vo.setConditionLevel(conditionCode(product));
+        vo.setImages(listProductImages(product.getId()));
 
         ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
         if (category != null) {
@@ -450,15 +408,15 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         return vo;
     }
 
-    private ProductAuditVO buildProductAuditVO(Product product) {
+    private ProductAuditVO buildProductAuditVO(Product product, Map<Long, ProductCategory> categoriesById, Map<Long, User> usersById) {
         ProductAuditVO vo = new ProductAuditVO();
         BeanUtils.copyProperties(product, vo);
-
-        ProductCategory category = productCategoryMapper.selectById(product.getCategoryId());
+        vo.setConditionLevel(conditionCode(product));
+        ProductCategory category = categoriesById.get(product.getCategoryId());
         if (category != null) {
             vo.setCategoryName(category.getName());
         }
-        User seller = userMapper.selectById(product.getSellerId());
+        User seller = usersById.get(product.getSellerId());
         if (seller != null) {
             vo.setSellerNickname(seller.getNickname());
         }
@@ -467,24 +425,43 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 
     private ProductImageVO buildProductImageVO(ProductImage image) {
         ProductImageVO vo = new ProductImageVO();
-        vo.setImageUrl(image.getImageUrl());
-        vo.setSortOrder(image.getSortOrder());
+        BeanUtils.copyProperties(image, vo);
         return vo;
     }
 
-    private void fillCategory(ProductSummaryVO vo, Long categoryId) {
-        ProductCategory category = productCategoryMapper.selectById(categoryId);
-        if (category != null) {
-            vo.setCategoryName(category.getName());
-        }
+    // ==================== 工具方法 ====================
+
+    private Integer conditionCode(Product product) {
+        return product.getConditionLevel() != null ? product.getConditionLevel().getCode() : null;
     }
 
-    private void fillSeller(ProductSummaryVO vo, Long sellerId) {
-        User seller = userMapper.selectById(sellerId);
-        if (seller != null) {
-            vo.setSellerNickname(seller.getNickname());
-            vo.setSellerCampusVerifyStatus(seller.getCampusVerifyStatus());
+    private Map<Long, ProductCategory> mapCategoriesById(Collection<Long> categoryIds) {
+        if (categoryIds == null || categoryIds.isEmpty()) {
+            return Map.of();
         }
+        return productCategoryMapper.selectBatchIds(categoryIds).stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(ProductCategory::getId, Function.identity(), (l, r) -> l));
+    }
+
+    private Map<Long, User> mapUsersById(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userMapper.selectBatchIds(userIds).stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(User::getId, Function.identity(), (l, r) -> l));
+    }
+
+    private <T> List<Long> extractIds(Collection<T> source, Function<T, Long> extractor) {
+        if (source == null || source.isEmpty()) {
+            return List.of();
+        }
+        return source.stream()
+                .map(extractor)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
     }
 
     private boolean isPublicVisible(Product product) {

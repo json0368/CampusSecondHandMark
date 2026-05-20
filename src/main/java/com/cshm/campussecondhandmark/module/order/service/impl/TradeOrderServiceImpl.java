@@ -27,37 +27,36 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Collection;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
+@Transactional(readOnly = true)
 public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOrder> implements TradeOrderService {
 
-    private static final int DEFAULT_PAGE_NUM = 1;
-    private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 50;
-    private static final int MAX_REMARK_LENGTH = 255;
     private static final DateTimeFormatter ORDER_NO_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
 
     @Autowired
     private ProductMapper productMapper;
-
     @Autowired
     private UserMapper userMapper;
-
     @Autowired
     private TradeReviewMapper tradeReviewMapper;
+
+    // ==================== 公开接口 ====================
 
     @Override
     @Transactional
     public Long createOrder(Long currentUserId, Long productId) {
-        if (productId == null) {
-            throw new BaseException("下单商品不能为空");
-        }
-
         User buyer = getUserOrThrow(currentUserId);
         assertUserAvailable(buyer, "买家");
 
@@ -115,8 +114,12 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
         queryWrapper.orderByDesc(TradeOrder::getCreateTime).orderByDesc(TradeOrder::getId);
 
         Page<TradeOrder> resultPage = page(page, queryWrapper);
+        Map<Long, Product> productsById = mapProductsById(extractIds(resultPage.getRecords(), TradeOrder::getProductId));
+        Map<Long, User> usersById = mapUsersById(extractParticipantIds(resultPage.getRecords()));
         return new PageResult<>(resultPage.getTotal(),
-                resultPage.getRecords().stream().map(this::buildOrderSummaryVO).toList());
+                resultPage.getRecords().stream()
+                        .map(order -> buildOrderSummaryVO(order, productsById, usersById))
+                        .toList());
     }
 
     @Override
@@ -158,7 +161,7 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
 
         LocalDateTime now = LocalDateTime.now();
         order.setStatus(TradeOrderStatusEnum.CANCELLED);
-        order.setCancelReason(normalizeRemark(remark));
+        order.setCancelReason(trimToNull(remark));
         order.setCancelledTime(now);
         order.setUpdateTime(now);
         if (!updateById(order)) {
@@ -200,10 +203,9 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
         }
     }
 
+    // ==================== 权限/状态校验 ====================
+
     private TradeOrder getOrderOrThrow(Long orderId) {
-        if (orderId == null) {
-            throw new BaseException("订单不存在");
-        }
         TradeOrder order = getById(orderId);
         if (order == null) {
             throw new BaseException("订单不存在");
@@ -212,9 +214,6 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
     }
 
     private Product getProductOrThrow(Long productId) {
-        if (productId == null) {
-            throw new BaseException("商品不存在");
-        }
         Product product = productMapper.selectById(productId);
         if (product == null) {
             throw new BaseException("商品不存在");
@@ -223,9 +222,6 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
     }
 
     private User getUserOrThrow(Long userId) {
-        if (userId == null) {
-            throw new BaseException("用户不存在");
-        }
         User user = userMapper.selectById(userId);
         if (user == null) {
             throw new BaseException("用户不存在");
@@ -263,53 +259,22 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
         }
     }
 
-    private String normalizeIdentityType(String identityType) {
-        String value = trimToNull(identityType);
-        if (!StringUtils.hasText(value)) {
-            return "ALL";
-        }
-        String normalized = value.toUpperCase(Locale.ROOT);
-        if (!"BUYER".equals(normalized) && !"SELLER".equals(normalized) && !"ALL".equals(normalized)) {
-            throw new BaseException("订单身份类型不正确");
-        }
-        return normalized;
-    }
+    // ==================== VO 构建 ====================
 
-    private String normalizeRemark(String remark) {
-        String value = trimToNull(remark);
-        if (value != null && value.length() > MAX_REMARK_LENGTH) {
-            throw new BaseException("备注不能超过255个字符");
-        }
-        return value;
-    }
-
-    private String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private String generateOrderNo(LocalDateTime now) {
-        return "TO" + ORDER_NO_FORMATTER.format(now) + ThreadLocalRandom.current().nextInt(1000, 10000);
-    }
-
-    private OrderSummaryVO buildOrderSummaryVO(TradeOrder order) {
+    private OrderSummaryVO buildOrderSummaryVO(TradeOrder order, Map<Long, Product> productsById, Map<Long, User> usersById) {
         OrderSummaryVO vo = new OrderSummaryVO();
         BeanUtils.copyProperties(order, vo);
 
-        Product product = productMapper.selectById(order.getProductId());
+        Product product = productsById.get(order.getProductId());
         if (product != null) {
             vo.setProductTitle(product.getTitle());
             vo.setProductCoverImageUrl(product.getCoverImageUrl());
         }
-
-        User buyer = userMapper.selectById(order.getBuyerId());
+        User buyer = usersById.get(order.getBuyerId());
         if (buyer != null) {
             vo.setBuyerNickname(buyer.getNickname());
         }
-        User seller = userMapper.selectById(order.getSellerId());
+        User seller = usersById.get(order.getSellerId());
         if (seller != null) {
             vo.setSellerNickname(seller.getNickname());
         }
@@ -325,7 +290,6 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
             vo.setProductTitle(product.getTitle());
             vo.setProductCoverImageUrl(product.getCoverImageUrl());
         }
-
         User buyer = userMapper.selectById(order.getBuyerId());
         if (buyer != null) {
             vo.setBuyerNickname(buyer.getNickname());
@@ -353,5 +317,65 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
         queryWrapper.eq(TradeReview::getOrderId, orderId)
                 .eq(TradeReview::getReviewerId, currentUserId);
         return tradeReviewMapper.selectCount(queryWrapper) > 0;
+    }
+
+    // ==================== 工具方法 ====================
+
+    private String normalizeIdentityType(String identityType) {
+        String value = trimToNull(identityType);
+        if (value == null) return "ALL";
+        return value.toUpperCase(Locale.ROOT);
+    }
+
+    private Map<Long, Product> mapProductsById(Collection<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) {
+            return Map.of();
+        }
+        return productMapper.selectBatchIds(productIds).stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(Product::getId, Function.identity(), (l, r) -> l));
+    }
+
+    private Map<Long, User> mapUsersById(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userMapper.selectBatchIds(userIds).stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(User::getId, Function.identity(), (l, r) -> l));
+    }
+
+    private List<Long> extractParticipantIds(Collection<TradeOrder> orders) {
+        if (orders == null || orders.isEmpty()) {
+            return List.of();
+        }
+        return orders.stream()
+                .flatMap(order -> java.util.stream.Stream.of(order.getBuyerId(), order.getSellerId()))
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+    }
+
+    private <T> List<Long> extractIds(Collection<T> source, Function<T, Long> extractor) {
+        if (source == null || source.isEmpty()) {
+            return List.of();
+        }
+        return source.stream()
+                .map(extractor)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+    }
+
+    private String generateOrderNo(LocalDateTime now) {
+        return "TO" + ORDER_NO_FORMATTER.format(now) + ThreadLocalRandom.current().nextInt(1000, 10000);
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

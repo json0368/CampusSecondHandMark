@@ -18,40 +18,38 @@ import com.cshm.campussecondhandmark.module.review.pojo.vo.ReviewVO;
 import com.cshm.campussecondhandmark.module.review.service.TradeReviewService;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
+@Transactional(readOnly = true)
 public class TradeReviewServiceImpl extends ServiceImpl<TradeReviewMapper, TradeReview> implements TradeReviewService {
 
-    private static final int DEFAULT_PAGE_NUM = 1;
-    private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 50;
-    private static final int MIN_SCORE = 1;
-    private static final int MAX_SCORE = 5;
-    private static final int MAX_CONTENT_LENGTH = 500;
 
     @Autowired
     private TradeOrderMapper tradeOrderMapper;
-
     @Autowired
     private UserMapper userMapper;
-
     @Autowired
     private ProductMapper productMapper;
+
+    // ==================== 公开接口 ====================
 
     @Override
     @Transactional
     public void createReview(Long currentUserId, ReviewCreateDTO dto) {
-        if (dto == null) {
-            throw new BaseException("评价参数不能为空");
-        }
-        validateScore(dto.getScore());
-
         TradeOrder order = getOrderOrThrow(dto.getOrderId());
         assertOrderParticipant(currentUserId, order);
         if (order.getStatus() != TradeOrderStatusEnum.COMPLETED) {
@@ -65,7 +63,7 @@ public class TradeReviewServiceImpl extends ServiceImpl<TradeReviewMapper, Trade
         review.setReviewerId(currentUserId);
         review.setRevieweeId(resolveRevieweeId(currentUserId, order));
         review.setScore(dto.getScore());
-        review.setContent(normalizeContent(dto.getContent()));
+        review.setContent(trimToNull(dto.getContent()));
         review.setCreateTime(now);
         review.setUpdateTime(now);
         if (!save(review)) {
@@ -75,10 +73,6 @@ public class TradeReviewServiceImpl extends ServiceImpl<TradeReviewMapper, Trade
 
     @Override
     public PageResult<ReviewVO> pageUserReviews(Long userId, ReviewQueryDTO dto) {
-        if (userId == null) {
-            throw new BaseException("用户不存在");
-        }
-
         Page<TradeReview> page = new Page<>(resolvePageNum(dto), resolvePageSize(dto));
         LambdaQueryWrapper<TradeReview> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(TradeReview::getRevieweeId, userId)
@@ -86,20 +80,17 @@ public class TradeReviewServiceImpl extends ServiceImpl<TradeReviewMapper, Trade
                 .orderByDesc(TradeReview::getId);
 
         Page<TradeReview> resultPage = page(page, queryWrapper);
-        return new PageResult<>(resultPage.getTotal(), resultPage.getRecords().stream().map(this::buildReviewVO).toList());
+        return buildReviewPageResult(resultPage.getTotal(), resultPage.getRecords());
     }
 
     @Override
     public PageResult<ReviewVO> pageOrderReviews(Long orderId) {
-        if (orderId == null) {
-            throw new BaseException("订单不存在");
-        }
-
         LambdaQueryWrapper<TradeReview> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(TradeReview::getOrderId, orderId)
                 .orderByDesc(TradeReview::getCreateTime)
                 .orderByDesc(TradeReview::getId);
-        return new PageResult<>(count(queryWrapper), list(queryWrapper).stream().map(this::buildReviewVO).toList());
+        List<TradeReview> reviews = list(queryWrapper);
+        return buildReviewPageResult(reviews.size(), reviews);
     }
 
     @Override
@@ -112,10 +103,9 @@ public class TradeReviewServiceImpl extends ServiceImpl<TradeReviewMapper, Trade
         assertNoDuplicateReview(currentUserId, order.getId());
     }
 
+    // ==================== 权限/状态校验 ====================
+
     private TradeOrder getOrderOrThrow(Long orderId) {
-        if (orderId == null) {
-            throw new BaseException("订单不存在");
-        }
         TradeOrder order = tradeOrderMapper.selectById(orderId);
         if (order == null) {
             throw new BaseException("订单不存在");
@@ -123,15 +113,8 @@ public class TradeReviewServiceImpl extends ServiceImpl<TradeReviewMapper, Trade
         return order;
     }
 
-    private void validateScore(Integer score) {
-        if (score == null || score < MIN_SCORE || score > MAX_SCORE) {
-            throw new BaseException("评分必须在1到5之间");
-        }
-    }
-
     private void assertOrderParticipant(Long currentUserId, TradeOrder order) {
-        if (currentUserId == null
-                || (!currentUserId.equals(order.getBuyerId()) && !currentUserId.equals(order.getSellerId()))) {
+        if (!currentUserId.equals(order.getBuyerId()) && !currentUserId.equals(order.getSellerId())) {
             throw new BaseException("无权评价该订单");
         }
     }
@@ -145,65 +128,113 @@ public class TradeReviewServiceImpl extends ServiceImpl<TradeReviewMapper, Trade
         }
     }
 
-    private Long resolveRevieweeId(Long reviewerId, TradeOrder order) {
-        return reviewerId.equals(order.getBuyerId()) ? order.getSellerId() : order.getBuyerId();
-    }
+    // ==================== VO 构建 ====================
 
-    private String normalizeContent(String content) {
-        if (!StringUtils.hasText(content)) {
-            return null;
-        }
-        String trimmed = content.trim();
-        if (trimmed.length() > MAX_CONTENT_LENGTH) {
-            throw new BaseException("评价内容不能超过500个字符");
-        }
-        return trimmed;
-    }
-
-    private long resolvePageNum(ReviewQueryDTO dto) {
-        if (dto == null || dto.getPageNum() == null || dto.getPageNum() < 1) {
-            return DEFAULT_PAGE_NUM;
-        }
-        return dto.getPageNum();
-    }
-
-    private long resolvePageSize(ReviewQueryDTO dto) {
-        if (dto == null || dto.getPageSize() == null || dto.getPageSize() < 1) {
-            return DEFAULT_PAGE_SIZE;
-        }
-        return Math.min(dto.getPageSize(), MAX_PAGE_SIZE);
-    }
-
-    private ReviewVO buildReviewVO(TradeReview review) {
+    private ReviewVO buildReviewVO(TradeReview review,
+                                   Map<Long, TradeOrder> ordersById,
+                                   Map<Long, Product> productsById,
+                                   Map<Long, User> usersById) {
         ReviewVO vo = new ReviewVO();
-        vo.setId(review.getId());
-        vo.setOrderId(review.getOrderId());
-        vo.setReviewerId(review.getReviewerId());
-        vo.setRevieweeId(review.getRevieweeId());
-        vo.setScore(review.getScore());
-        vo.setContent(review.getContent());
-        vo.setCreateTime(review.getCreateTime());
+        BeanUtils.copyProperties(review, vo);
 
-        TradeOrder order = tradeOrderMapper.selectById(review.getOrderId());
+        TradeOrder order = ordersById.get(review.getOrderId());
         if (order != null) {
             vo.setProductId(order.getProductId());
-            Product product = productMapper.selectById(order.getProductId());
+            Product product = productsById.get(order.getProductId());
             if (product != null) {
                 vo.setProductTitle(product.getTitle());
                 vo.setProductCoverImageUrl(product.getCoverImageUrl());
             }
         }
-
-        User reviewer = userMapper.selectById(review.getReviewerId());
+        User reviewer = usersById.get(review.getReviewerId());
         if (reviewer != null) {
             vo.setReviewerNickname(reviewer.getNickname());
             vo.setReviewerAvatarUrl(reviewer.getAvatarUrl());
         }
-        User reviewee = userMapper.selectById(review.getRevieweeId());
+        User reviewee = usersById.get(review.getRevieweeId());
         if (reviewee != null) {
             vo.setRevieweeNickname(reviewee.getNickname());
             vo.setRevieweeAvatarUrl(reviewee.getAvatarUrl());
         }
         return vo;
+    }
+
+    private PageResult<ReviewVO> buildReviewPageResult(long total, List<TradeReview> reviews) {
+        Map<Long, TradeOrder> ordersById = mapOrdersById(extractIds(reviews, TradeReview::getOrderId));
+        Map<Long, Product> productsById = mapProductsById(extractIds(ordersById.values(), TradeOrder::getProductId));
+        Map<Long, User> usersById = mapUsersById(extractUserIds(reviews));
+        return new PageResult<>(total, reviews.stream()
+                .map(review -> buildReviewVO(review, ordersById, productsById, usersById))
+                .toList());
+    }
+
+    // ==================== 工具方法 ====================
+
+    private Long resolveRevieweeId(Long reviewerId, TradeOrder order) {
+        return reviewerId.equals(order.getBuyerId()) ? order.getSellerId() : order.getBuyerId();
+    }
+
+    private long resolvePageNum(ReviewQueryDTO dto) {
+        return dto.getPageNum() == null || dto.getPageNum() < 1 ? 1 : dto.getPageNum();
+    }
+
+    private long resolvePageSize(ReviewQueryDTO dto) {
+        return dto.getPageSize() == null || dto.getPageSize() < 1 ? 10 : Math.min(dto.getPageSize(), MAX_PAGE_SIZE);
+    }
+
+    private Map<Long, TradeOrder> mapOrdersById(Collection<Long> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            return Map.of();
+        }
+        return tradeOrderMapper.selectBatchIds(orderIds).stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(TradeOrder::getId, Function.identity(), (l, r) -> l));
+    }
+
+    private Map<Long, Product> mapProductsById(Collection<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) {
+            return Map.of();
+        }
+        return productMapper.selectBatchIds(productIds).stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(Product::getId, Function.identity(), (l, r) -> l));
+    }
+
+    private Map<Long, User> mapUsersById(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userMapper.selectBatchIds(userIds).stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(User::getId, Function.identity(), (l, r) -> l));
+    }
+
+    private List<Long> extractUserIds(Collection<TradeReview> reviews) {
+        if (reviews == null || reviews.isEmpty()) {
+            return List.of();
+        }
+        return reviews.stream()
+                .flatMap(review -> java.util.stream.Stream.of(review.getReviewerId(), review.getRevieweeId()))
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+    }
+
+    private <T> List<Long> extractIds(Collection<T> source, Function<T, Long> extractor) {
+        if (source == null || source.isEmpty()) {
+            return List.of();
+        }
+        return source.stream()
+                .map(extractor)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+    }
+
+    private String trimToNull(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
     }
 }

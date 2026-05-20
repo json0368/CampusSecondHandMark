@@ -1,9 +1,13 @@
 package com.cshm.campussecondhandmark.module.order.service.impl;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.cshm.campussecondhandmark.common.result.PageResult;
 import com.cshm.campussecondhandmark.module.order.enums.TradeOrderStatusEnum;
 import com.cshm.campussecondhandmark.module.order.mapper.TradeOrderMapper;
+import com.cshm.campussecondhandmark.module.order.pojo.dto.OrderQueryDTO;
 import com.cshm.campussecondhandmark.module.order.pojo.entity.TradeOrder;
 import com.cshm.campussecondhandmark.module.order.pojo.vo.OrderDetailVO;
+import com.cshm.campussecondhandmark.module.order.pojo.vo.OrderSummaryVO;
 import com.cshm.campussecondhandmark.module.product.mapper.ProductMapper;
 import com.cshm.campussecondhandmark.module.product.pojo.entity.Product;
 import com.cshm.campussecondhandmark.module.review.mapper.TradeReviewMapper;
@@ -16,8 +20,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -57,6 +65,33 @@ class TradeOrderServiceImplTest {
         OrderDetailVO detailVO = tradeOrderService.getOrderDetail(10L, 1L);
 
         assertFalse(detailVO.getCanReview());
+    }
+
+    @Test
+    void pageMyOrdersShouldBatchLoadRelatedProductAndUsers() {
+        Page<TradeOrder> page = new Page<>(1, 10);
+        page.setTotal(1);
+        page.setRecords(List.of(completedOrder()));
+
+        OrderQueryDTO dto = new OrderQueryDTO();
+        dto.setPageNum(1);
+        dto.setPageSize(10);
+
+        when(tradeOrderMapper.selectPage(any(Page.class), any())).thenReturn(page);
+        when(productMapper.selectBatchIds(any())).thenReturn(List.of(product()));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(user(10L, "buyer"), user(20L, "seller")));
+
+        PageResult<OrderSummaryVO> result = tradeOrderService.pageMyOrders(10L, dto);
+
+        OrderSummaryVO vo = result.getRecords().get(0);
+        org.junit.jupiter.api.Assertions.assertEquals("book", vo.getProductTitle());
+        org.junit.jupiter.api.Assertions.assertEquals("buyer", vo.getBuyerNickname());
+        org.junit.jupiter.api.Assertions.assertEquals("seller", vo.getSellerNickname());
+        verify(productMapper).selectBatchIds(any());
+        verify(userMapper).selectBatchIds(any());
+        verify(productMapper, never()).selectById(30L);
+        verify(userMapper, never()).selectById(10L);
+        verify(userMapper, never()).selectById(20L);
     }
 
     private TradeOrder completedOrder() {

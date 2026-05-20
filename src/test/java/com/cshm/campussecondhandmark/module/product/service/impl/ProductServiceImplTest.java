@@ -11,11 +11,13 @@ import com.cshm.campussecondhandmark.module.product.mapper.ProductImageMapper;
 import com.cshm.campussecondhandmark.module.product.mapper.ProductMapper;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.AdminProductRemoveDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductAuditDTO;
+import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductAuditQueryDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductCreateDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductSearchDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.entity.Product;
 import com.cshm.campussecondhandmark.module.product.pojo.entity.ProductCategory;
 import com.cshm.campussecondhandmark.module.product.pojo.entity.ProductImage;
+import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductAuditVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductDetailVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductSummaryVO;
 import com.cshm.campussecondhandmark.module.user.enums.CampusVerifyStatusEnum;
@@ -40,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -123,8 +126,8 @@ class ProductServiceImplTest {
         page.setRecords(List.of(product));
 
         when(productMapper.selectPage(any(Page.class), any())).thenReturn(page);
-        when(productCategoryMapper.selectById(1L)).thenReturn(enabledCategory());
-        when(userMapper.selectById(2L)).thenReturn(seller());
+        when(productCategoryMapper.selectBatchIds(any())).thenReturn(List.of(enabledCategory()));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(seller()));
 
         PageResult<ProductSummaryVO> result = productService.pageProducts(new ProductSearchDTO());
 
@@ -136,6 +139,36 @@ class ProductServiceImplTest {
         assertEquals("教材图书", vo.getCategoryName());
         assertEquals("张三", vo.getSellerNickname());
         assertEquals(CampusVerifyStatusEnum.APPROVED, vo.getSellerCampusVerifyStatus());
+        verify(productCategoryMapper).selectBatchIds(any());
+        verify(userMapper).selectBatchIds(any());
+        verify(productCategoryMapper, never()).selectById(1L);
+        verify(userMapper, never()).selectById(2L);
+    }
+
+    @Test
+    void pageAuditProductsShouldBatchLoadCategoryAndSeller() {
+        Product product = approvedOnShelfProduct();
+        product.setAuditStatus(ProductAuditStatusEnum.PENDING);
+        Page<Product> page = new Page<>(1, 10);
+        page.setTotal(1);
+        page.setRecords(List.of(product));
+
+        when(productMapper.selectPage(any(Page.class), any())).thenReturn(page);
+        when(productCategoryMapper.selectBatchIds(any())).thenReturn(List.of(enabledCategory()));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(seller()));
+
+        PageResult<ProductAuditVO> result = productService.pageAuditProducts(new ProductAuditQueryDTO());
+
+        assertEquals(1, result.getTotal());
+        assertEquals(1, result.getRecords().size());
+        ProductAuditVO vo = result.getRecords().get(0);
+        assertEquals(10L, vo.getId());
+        assertEquals("教材图书", vo.getCategoryName());
+        assertEquals("张三", vo.getSellerNickname());
+        verify(productCategoryMapper).selectBatchIds(any());
+        verify(userMapper).selectBatchIds(any());
+        verify(productCategoryMapper, never()).selectById(1L);
+        verify(userMapper, never()).selectById(2L);
     }
 
     @Test
@@ -155,6 +188,7 @@ class ProductServiceImplTest {
         ProductDetailVO sellerView = productService.getProductDetail(10L, 2L);
 
         assertEquals(10L, sellerView.getId());
+        assertEquals(1, sellerView.getConditionLevel());
         assertEquals(1, sellerView.getImages().size());
         assertFalse(sellerView.getCanOrder());
         assertFalse(sellerView.getCanChat());

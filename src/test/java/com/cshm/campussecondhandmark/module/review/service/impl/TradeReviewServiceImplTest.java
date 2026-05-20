@@ -142,10 +142,9 @@ class TradeReviewServiceImplTest {
         dto.setPageSize(10);
 
         when(tradeReviewMapper.selectPage(any(Page.class), any())).thenReturn(page);
-        when(tradeOrderMapper.selectById(1L)).thenReturn(completedOrder());
-        when(userMapper.selectById(10L)).thenReturn(user(10L, "buyer"));
-        when(userMapper.selectById(20L)).thenReturn(user(20L, "seller"));
-        when(productMapper.selectById(30L)).thenReturn(product());
+        when(tradeOrderMapper.selectBatchIds(any())).thenReturn(List.of(completedOrder()));
+        when(productMapper.selectBatchIds(any())).thenReturn(List.of(product()));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(user(10L, "buyer"), user(20L, "seller")));
 
         PageResult<ReviewVO> result = tradeReviewService.pageUserReviews(20L, dto);
 
@@ -161,6 +160,74 @@ class TradeReviewServiceImplTest {
         assertEquals("book", vo.getProductTitle());
         assertEquals(5, vo.getScore());
         assertEquals("smooth trade", vo.getContent());
+    }
+
+    @Test
+    void pageUserReviewsShouldBatchLoadOrdersProductsAndUsers() {
+        TradeReview review = new TradeReview();
+        review.setId(100L);
+        review.setOrderId(1L);
+        review.setReviewerId(10L);
+        review.setRevieweeId(20L);
+        review.setScore(5);
+        review.setCreateTime(LocalDateTime.now());
+
+        Page<TradeReview> page = new Page<>(1, 10);
+        page.setTotal(1);
+        page.setRecords(List.of(review));
+
+        ReviewQueryDTO dto = new ReviewQueryDTO();
+        dto.setPageNum(1);
+        dto.setPageSize(10);
+
+        when(tradeReviewMapper.selectPage(any(Page.class), any())).thenReturn(page);
+        when(tradeOrderMapper.selectBatchIds(any())).thenReturn(List.of(completedOrder()));
+        when(productMapper.selectBatchIds(any())).thenReturn(List.of(product()));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(user(10L, "buyer"), user(20L, "seller")));
+
+        PageResult<ReviewVO> result = tradeReviewService.pageUserReviews(20L, dto);
+
+        ReviewVO vo = result.getRecords().get(0);
+        assertEquals("book", vo.getProductTitle());
+        assertEquals("buyer", vo.getReviewerNickname());
+        assertEquals("seller", vo.getRevieweeNickname());
+        verify(tradeOrderMapper).selectBatchIds(any());
+        verify(productMapper).selectBatchIds(any());
+        verify(userMapper).selectBatchIds(any());
+        verify(tradeOrderMapper, never()).selectById(1L);
+        verify(productMapper, never()).selectById(30L);
+        verify(userMapper, never()).selectById(10L);
+        verify(userMapper, never()).selectById(20L);
+    }
+
+    @Test
+    void pageOrderReviewsShouldBatchLoadOrdersProductsAndUsers() {
+        TradeReview review = new TradeReview();
+        review.setId(100L);
+        review.setOrderId(1L);
+        review.setReviewerId(10L);
+        review.setRevieweeId(20L);
+        review.setScore(5);
+        review.setCreateTime(LocalDateTime.now());
+
+        when(tradeReviewMapper.selectList(any())).thenReturn(List.of(review));
+        when(tradeOrderMapper.selectBatchIds(any())).thenReturn(List.of(completedOrder()));
+        when(productMapper.selectBatchIds(any())).thenReturn(List.of(product()));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(user(10L, "buyer"), user(20L, "seller")));
+
+        PageResult<ReviewVO> result = tradeReviewService.pageOrderReviews(1L);
+
+        ReviewVO vo = result.getRecords().get(0);
+        assertEquals("book", vo.getProductTitle());
+        assertEquals("buyer", vo.getReviewerNickname());
+        assertEquals("seller", vo.getRevieweeNickname());
+        verify(tradeOrderMapper).selectBatchIds(any());
+        verify(productMapper).selectBatchIds(any());
+        verify(userMapper).selectBatchIds(any());
+        verify(tradeOrderMapper, never()).selectById(1L);
+        verify(productMapper, never()).selectById(30L);
+        verify(userMapper, never()).selectById(10L);
+        verify(userMapper, never()).selectById(20L);
     }
 
     private TradeOrder completedOrder() {

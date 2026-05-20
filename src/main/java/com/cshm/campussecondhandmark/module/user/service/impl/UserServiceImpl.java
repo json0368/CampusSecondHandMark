@@ -35,6 +35,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Service
+@Transactional(readOnly = true)
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
 
     @Autowired
@@ -44,6 +45,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private JwtProperties jwtProperties;
 
     @Override
+    @Transactional
     public UserLoginVO login(UserLoginDTO userLoginDTO) {
         User user = validateLogin(userLoginDTO);
         if (user.getRole() != UserRoleEnum.USER) {
@@ -120,6 +122,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     @Override
+    @Transactional
     public AdminLoginVO adminLogin(AdminLoginDTO adminLoginDTO) {
         User user = validateAdminLogin(adminLoginDTO);
         refreshLastLoginTime(user);
@@ -151,6 +154,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     @Override
+    @Transactional
     public void update(UserUpdateDTO userUpdateDTO) {
         if (userUpdateDTO == null) {
             throw new BaseException("更新信息不能为空");
@@ -166,6 +170,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     @Override
+    @Transactional
     public void updateProfile(Long currentUserId, UserProfileUpdateDTO userProfileUpdateDTO) {
         if (userProfileUpdateDTO == null) {
             throw new BaseException("更新信息不能为空");
