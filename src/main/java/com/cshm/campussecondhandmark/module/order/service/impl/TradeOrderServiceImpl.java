@@ -1,6 +1,7 @@
 package com.cshm.campussecondhandmark.module.order.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cshm.campussecondhandmark.common.exception.BaseException;
@@ -160,18 +161,22 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
         }
 
         LocalDateTime now = LocalDateTime.now();
-        order.setStatus(TradeOrderStatusEnum.CANCELLED);
-        order.setCancelReason(trimToNull(remark));
-        order.setCancelledTime(now);
-        order.setUpdateTime(now);
-        if (!updateById(order)) {
+        LambdaUpdateWrapper<TradeOrder> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(TradeOrder::getId, order.getId())
+                .eq(TradeOrder::getStatus, order.getStatus())
+                .set(TradeOrder::getStatus, TradeOrderStatusEnum.CANCELLED)
+                .set(TradeOrder::getCancelReason, trimToNull(remark))
+                .set(TradeOrder::getCancelledTime, now)
+                .set(TradeOrder::getUpdateTime, now);
+        if (!update(updateWrapper)) {
             throw new BaseException("取消订单失败");
         }
 
-        Product product = getProductOrThrow(order.getProductId());
-        product.setSaleStatus(ProductSaleStatusEnum.ON_SHELF);
-        product.setUpdateTime(now);
-        if (productMapper.updateById(product) <= 0) {
+        LambdaUpdateWrapper<Product> productUpdate = new LambdaUpdateWrapper<>();
+        productUpdate.eq(Product::getId, order.getProductId())
+                .set(Product::getSaleStatus, ProductSaleStatusEnum.ON_SHELF)
+                .set(Product::getUpdateTime, now);
+        if (productMapper.update(null, productUpdate) <= 0) {
             throw new BaseException("恢复商品状态失败");
         }
     }
@@ -188,17 +193,21 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
         }
 
         LocalDateTime now = LocalDateTime.now();
-        order.setStatus(TradeOrderStatusEnum.COMPLETED);
-        order.setCompletedTime(now);
-        order.setUpdateTime(now);
-        if (!updateById(order)) {
+        LambdaUpdateWrapper<TradeOrder> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(TradeOrder::getId, order.getId())
+                .eq(TradeOrder::getStatus, TradeOrderStatusEnum.IN_TRANSACTION)
+                .set(TradeOrder::getStatus, TradeOrderStatusEnum.COMPLETED)
+                .set(TradeOrder::getCompletedTime, now)
+                .set(TradeOrder::getUpdateTime, now);
+        if (!update(updateWrapper)) {
             throw new BaseException("完成订单失败");
         }
 
-        Product product = getProductOrThrow(order.getProductId());
-        product.setSaleStatus(ProductSaleStatusEnum.SOLD);
-        product.setUpdateTime(now);
-        if (productMapper.updateById(product) <= 0) {
+        LambdaUpdateWrapper<Product> productUpdate = new LambdaUpdateWrapper<>();
+        productUpdate.eq(Product::getId, order.getProductId())
+                .set(Product::getSaleStatus, ProductSaleStatusEnum.SOLD)
+                .set(Product::getUpdateTime, now);
+        if (productMapper.update(null, productUpdate) <= 0) {
             throw new BaseException("更新商品售出状态失败");
         }
     }
@@ -285,16 +294,19 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
         OrderDetailVO vo = new OrderDetailVO();
         BeanUtils.copyProperties(order, vo);
 
-        Product product = productMapper.selectById(order.getProductId());
+        Map<Long, Product> productsById = mapProductsById(List.of(order.getProductId()));
+        Map<Long, User> usersById = mapUsersById(List.of(order.getBuyerId(), order.getSellerId()));
+
+        Product product = productsById.get(order.getProductId());
         if (product != null) {
             vo.setProductTitle(product.getTitle());
             vo.setProductCoverImageUrl(product.getCoverImageUrl());
         }
-        User buyer = userMapper.selectById(order.getBuyerId());
+        User buyer = usersById.get(order.getBuyerId());
         if (buyer != null) {
             vo.setBuyerNickname(buyer.getNickname());
         }
-        User seller = userMapper.selectById(order.getSellerId());
+        User seller = usersById.get(order.getSellerId());
         if (seller != null) {
             vo.setSellerNickname(seller.getNickname());
         }
