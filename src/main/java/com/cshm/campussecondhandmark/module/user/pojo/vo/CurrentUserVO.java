@@ -46,6 +46,9 @@ public class CurrentUserVO {
     @ApiModelProperty(value = "校园认证状态")
     private CampusVerifyStatusEnum campusVerifyStatus;
 
+    @ApiModelProperty(value = "校园认证审核备注")
+    private String campusVerifyRemark;
+
     @ApiModelProperty(value = "最后登录时间")
     private LocalDateTime lastLoginTime;
 }

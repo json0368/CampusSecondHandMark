@@ -1,17 +1,22 @@
 package com.cshm.campussecondhandmark.module.user.service.impl;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cshm.campussecondhandmark.common.exception.BaseException;
 import com.cshm.campussecondhandmark.common.properties.JwtProperties;
+import com.cshm.campussecondhandmark.common.result.PageResult;
 import com.cshm.campussecondhandmark.module.admin.pojo.dto.AdminLoginDTO;
 import com.cshm.campussecondhandmark.module.admin.pojo.vo.AdminLoginVO;
 import com.cshm.campussecondhandmark.module.user.enums.CampusVerifyStatusEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserStatusEnum;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.CampusVerifyAuditDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.CampusVerifyQueryDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserLoginDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserProfileUpdateDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserRegisterDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import com.cshm.campussecondhandmark.module.user.pojo.vo.CampusVerifyAuditVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.CurrentUserVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.UserLoginVO;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +27,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -242,5 +250,104 @@ class UserServiceImplTest {
         assertEquals("http://example.com/new-avatar.jpg", updatedUser.getAvatarUrl());
         assertEquals(CampusVerifyStatusEnum.PENDING, updatedUser.getCampusVerifyStatus());
         assertNotNull(updatedUser.getUpdateTime());
+    }
+
+    @Test
+    void auditCampusVerifyShouldApprovePendingUserAndRecordAuditMetadata() {
+        User user = new User();
+        user.setId(1L);
+        user.setRole(UserRoleEnum.USER);
+        user.setCampusVerifyStatus(CampusVerifyStatusEnum.PENDING);
+
+        CampusVerifyAuditDTO dto = new CampusVerifyAuditDTO();
+        dto.setCampusVerifyStatus(CampusVerifyStatusEnum.APPROVED);
+        dto.setRemark("材料已核验");
+
+        when(userMapper.selectById(1L)).thenReturn(user);
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+
+        userService.auditCampusVerify(1L, 99L, dto);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).updateById(captor.capture());
+        User updatedUser = captor.getValue();
+
+        assertEquals(CampusVerifyStatusEnum.APPROVED, updatedUser.getCampusVerifyStatus());
+        assertEquals("材料已核验", updatedUser.getCampusVerifyRemark());
+        assertEquals(99L, updatedUser.getCampusVerifyAdminId());
+        assertNotNull(updatedUser.getCampusVerifyTime());
+    }
+
+    @Test
+    void auditCampusVerifyShouldRejectPendingUserAndRequireReason() {
+        User user = new User();
+        user.setId(1L);
+        user.setRole(UserRoleEnum.USER);
+        user.setCampusVerifyStatus(CampusVerifyStatusEnum.PENDING);
+
+        CampusVerifyAuditDTO dto = new CampusVerifyAuditDTO();
+        dto.setCampusVerifyStatus(CampusVerifyStatusEnum.REJECTED);
+
+        when(userMapper.selectById(1L)).thenReturn(user);
+
+        BaseException exception = assertThrows(BaseException.class, () -> userService.auditCampusVerify(1L, 99L, dto));
+
+        assertEquals("驳回原因不能为空", exception.getMessage());
+        verify(userMapper, never()).updateById(any(User.class));
+    }
+
+    @Test
+    void updateProfileShouldClearCampusAuditMetadataWhenCampusInfoChanges() {
+        User user = new User();
+        user.setId(1L);
+        user.setNickname("张三");
+        user.setStudentNo("20240001");
+        user.setMajor("软件工程");
+        user.setRole(UserRoleEnum.USER);
+        user.setCampusVerifyStatus(CampusVerifyStatusEnum.REJECTED);
+        user.setCampusVerifyRemark("学号不匹配");
+        user.setCampusVerifyAdminId(8L);
+        user.setCampusVerifyTime(LocalDateTime.now().minusDays(1));
+
+        UserProfileUpdateDTO dto = new UserProfileUpdateDTO();
+        dto.setStudentNo("20240002");
+
+        when(userMapper.selectById(1L)).thenReturn(user);
+        when(userMapper.selectCount(any())).thenReturn(0L);
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+
+        userService.updateProfile(1L, dto);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).updateById(captor.capture());
+        User updatedUser = captor.getValue();
+
+        assertEquals(CampusVerifyStatusEnum.PENDING, updatedUser.getCampusVerifyStatus());
+        assertNull(updatedUser.getCampusVerifyRemark());
+        assertNull(updatedUser.getCampusVerifyAdminId());
+        assertNull(updatedUser.getCampusVerifyTime());
+    }
+
+    @Test
+    void pageCampusVerifyUsersShouldReturnAuditView() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("zhangsan");
+        user.setNickname("张三");
+        user.setStudentNo("20240001");
+        user.setMajor("软件工程");
+        user.setCampusVerifyStatus(CampusVerifyStatusEnum.PENDING);
+
+        Page<User> page = new Page<>(1, 10);
+        page.setTotal(1);
+        page.setRecords(List.of(user));
+
+        when(userMapper.selectPage(any(Page.class), any())).thenReturn(page);
+
+        PageResult<CampusVerifyAuditVO> result = userService.pageCampusVerifyUsers(new CampusVerifyQueryDTO());
+
+        assertEquals(1, result.getTotal());
+        assertEquals("zhangsan", result.getRecords().get(0).getUsername());
+        assertEquals(CampusVerifyStatusEnum.PENDING, result.getRecords().get(0).getCampusVerifyStatus());
     }
 }

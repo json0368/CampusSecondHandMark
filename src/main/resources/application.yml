@@ -18,7 +18,7 @@ cshm:
     user-ttl: 7200000
   upload:
     path: ${user.dir}/upload/
-    public-prefix: http://localhost:${server.port}
+    public-prefix: http://139.159.150.134:${server.port}
 
 
 spring:

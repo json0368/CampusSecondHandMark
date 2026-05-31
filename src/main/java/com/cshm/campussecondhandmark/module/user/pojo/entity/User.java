@@ -52,6 +52,15 @@ public class User {
     @ApiModelProperty(value = "用户校园认证状态")
     private CampusVerifyStatusEnum campusVerifyStatus;
 
+    @ApiModelProperty(value = "校园认证审核备注")
+    private String campusVerifyRemark;
+
+    @ApiModelProperty(value = "校园认证审核时间")
+    private LocalDateTime campusVerifyTime;
+
+    @ApiModelProperty(value = "校园认证审核管理员ID")
+    private Long campusVerifyAdminId;
+
     @ApiModelProperty(value = "用户最后一次登录时间")
     private LocalDateTime lastLoginTime;
 

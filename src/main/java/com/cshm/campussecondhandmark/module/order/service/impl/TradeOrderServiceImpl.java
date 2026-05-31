@@ -95,7 +95,9 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
 
     @Override
     public PageResult<OrderSummaryVO> pageMyOrders(Long currentUserId, OrderQueryDTO dto) {
-        Page<TradeOrder> page = new Page<>(dto.getPageNum(), Math.min(dto.getPageSize(), MAX_PAGE_SIZE));
+        int pageNum = (dto.getPageNum() != null && dto.getPageNum() > 0) ? dto.getPageNum() : 1;
+        int pageSize = (dto.getPageSize() != null && dto.getPageSize() > 0) ? Math.min(dto.getPageSize(), MAX_PAGE_SIZE) : 10;
+        Page<TradeOrder> page = new Page<>(pageNum, pageSize);
         LambdaQueryWrapper<TradeOrder> queryWrapper = new LambdaQueryWrapper<>();
 
         String identityType = normalizeIdentityType(dto.getIdentityType());

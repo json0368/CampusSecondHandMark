@@ -14,11 +14,14 @@ import com.cshm.campussecondhandmark.module.user.enums.CampusVerifyStatusEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserStatusEnum;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.CampusVerifyAuditDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.CampusVerifyQueryDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserLoginDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserProfileUpdateDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserRegisterDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserUpdateDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import com.cshm.campussecondhandmark.module.user.pojo.vo.CampusVerifyAuditVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.CurrentUserVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.UserLoginVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.UserProfileVO;
@@ -32,11 +35,17 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
+
+    private static final int DEFAULT_PAGE_NUM = 1;
+    private static final int DEFAULT_PAGE_SIZE = 10;
+    private static final int MAX_PAGE_SIZE = 50;
 
     @Autowired
     private BCryptPasswordEncoder passwordEncoder;
@@ -154,6 +163,32 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     @Override
+    public PageResult<CampusVerifyAuditVO> pageCampusVerifyUsers(CampusVerifyQueryDTO dto) {
+        CampusVerifyQueryDTO queryDTO = dto == null ? new CampusVerifyQueryDTO() : dto;
+        Page<User> page = new Page<>(normalizePageNum(queryDTO.getPageNum()), normalizePageSize(queryDTO.getPageSize()));
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(User::getRole, UserRoleEnum.USER)
+                .eq(User::getCampusVerifyStatus,
+                        queryDTO.getCampusVerifyStatus() == null ? CampusVerifyStatusEnum.PENDING : queryDTO.getCampusVerifyStatus());
+
+        String keyword = trimToNull(queryDTO.getKeyword());
+        if (StringUtils.hasText(keyword)) {
+            queryWrapper.and(wrapper -> wrapper.like(User::getUsername, keyword)
+                    .or()
+                    .like(User::getNickname, keyword)
+                    .or()
+                    .like(User::getStudentNo, keyword));
+        }
+        queryWrapper.orderByDesc(User::getCreateTime).orderByDesc(User::getId);
+
+        Page<User> resultPage = page(page, queryWrapper);
+        List<CampusVerifyAuditVO> records = resultPage.getRecords().stream()
+                .map(this::buildCampusVerifyAuditVO)
+                .collect(Collectors.toList());
+        return new PageResult<>(resultPage.getTotal(), records);
+    }
+
+    @Override
     @Transactional
     public void update(UserUpdateDTO userUpdateDTO) {
         if (userUpdateDTO == null) {
@@ -167,6 +202,45 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         userProfileUpdateDTO.setMajor(userUpdateDTO.getMajor());
         userProfileUpdateDTO.setAvatarUrl(userUpdateDTO.getAvatarUrl());
         updateProfile(userUpdateDTO.getId(), userProfileUpdateDTO);
+    }
+
+    @Override
+    @Transactional
+    public void auditCampusVerify(Long userId, Long adminId, CampusVerifyAuditDTO dto) {
+        if (dto == null) {
+            throw new BaseException("审核信息不能为空");
+        }
+        if (adminId == null) {
+            throw new BaseException("管理员未登录");
+        }
+
+        CampusVerifyStatusEnum campusVerifyStatus = dto.getCampusVerifyStatus();
+        if (campusVerifyStatus != CampusVerifyStatusEnum.APPROVED && campusVerifyStatus != CampusVerifyStatusEnum.REJECTED) {
+            throw new BaseException("审核状态非法");
+        }
+
+        User user = getUserOrThrow(userId);
+        if (user.getRole() != UserRoleEnum.USER) {
+            throw new BaseException("审核目标必须是普通用户");
+        }
+        if (user.getCampusVerifyStatus() != CampusVerifyStatusEnum.PENDING) {
+            throw new BaseException("当前用户不是待审核状态");
+        }
+
+        String remark = trimToNull(dto.getRemark());
+        if (campusVerifyStatus == CampusVerifyStatusEnum.REJECTED && !StringUtils.hasText(remark)) {
+            throw new BaseException("驳回原因不能为空");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        user.setCampusVerifyStatus(campusVerifyStatus);
+        user.setCampusVerifyRemark(remark);
+        user.setCampusVerifyAdminId(adminId);
+        user.setCampusVerifyTime(now);
+        user.setUpdateTime(now);
+        if (!updateById(user)) {
+            throw new BaseException("校园认证审核失败");
+        }
     }
 
     @Override
@@ -226,6 +300,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
         if (campusInfoChanged && user.getRole() == UserRoleEnum.USER) {
             user.setCampusVerifyStatus(CampusVerifyStatusEnum.PENDING);
+            clearCampusVerifyAuditFields(user);
         }
 
         user.setUpdateTime(LocalDateTime.now());
@@ -345,6 +420,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return currentUserVO;
     }
 
+    private CampusVerifyAuditVO buildCampusVerifyAuditVO(User user) {
+        CampusVerifyAuditVO campusVerifyAuditVO = new CampusVerifyAuditVO();
+        BeanUtils.copyProperties(user, campusVerifyAuditVO);
+        return campusVerifyAuditVO;
+    }
+
     private UserProfileVO buildUserProfileVO(User user) {
         UserProfileVO userProfileVO = new UserProfileVO();
         userProfileVO.setId(user.getId());
@@ -367,6 +448,23 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         claims.put("tokenType", isAdmin ? "admin" : "user");
 
         return JwtUtil.createJWT(secretKey, ttl, claims);
+    }
+
+    private void clearCampusVerifyAuditFields(User user) {
+        user.setCampusVerifyRemark(null);
+        user.setCampusVerifyTime(null);
+        user.setCampusVerifyAdminId(null);
+    }
+
+    private long normalizePageNum(Integer pageNum) {
+        return pageNum == null || pageNum < 1 ? DEFAULT_PAGE_NUM : pageNum;
+    }
+
+    private long normalizePageSize(Integer pageSize) {
+        if (pageSize == null || pageSize < 1) {
+            return DEFAULT_PAGE_SIZE;
+        }
+        return Math.min(pageSize, MAX_PAGE_SIZE);
     }
 
     private String trimToNull(String value) {
