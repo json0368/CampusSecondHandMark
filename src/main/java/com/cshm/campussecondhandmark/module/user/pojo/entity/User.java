@@ -61,6 +61,24 @@ public class User {
     @ApiModelProperty(value = "校园认证审核管理员ID")
     private Long campusVerifyAdminId;
 
+    @ApiModelProperty(value = "封禁原因")
+    private String banReason;
+
+    @ApiModelProperty(value = "封禁时间")
+    private LocalDateTime banTime;
+
+    @ApiModelProperty(value = "封禁管理员ID")
+    private Long banAdminId;
+
+    @ApiModelProperty(value = "解封原因")
+    private String unbanReason;
+
+    @ApiModelProperty(value = "解封时间")
+    private LocalDateTime unbanTime;
+
+    @ApiModelProperty(value = "解封管理员ID")
+    private Long unbanAdminId;
+
     @ApiModelProperty(value = "用户最后一次登录时间")
     private LocalDateTime lastLoginTime;
 

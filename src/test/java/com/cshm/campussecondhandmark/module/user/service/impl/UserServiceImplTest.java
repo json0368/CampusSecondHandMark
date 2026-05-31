@@ -6,6 +6,9 @@ import com.cshm.campussecondhandmark.common.properties.JwtProperties;
 import com.cshm.campussecondhandmark.common.result.PageResult;
 import com.cshm.campussecondhandmark.module.admin.pojo.dto.AdminLoginDTO;
 import com.cshm.campussecondhandmark.module.admin.pojo.vo.AdminLoginVO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserBanDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserQueryDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserUnbanDTO;
 import com.cshm.campussecondhandmark.module.user.enums.CampusVerifyStatusEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserStatusEnum;
@@ -16,6 +19,8 @@ import com.cshm.campussecondhandmark.module.user.pojo.dto.UserLoginDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserProfileUpdateDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserRegisterDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import com.cshm.campussecondhandmark.module.user.pojo.vo.AdminUserDetailVO;
+import com.cshm.campussecondhandmark.module.user.pojo.vo.AdminUserListVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.CampusVerifyAuditVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.CurrentUserVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.UserLoginVO;
@@ -349,5 +354,166 @@ class UserServiceImplTest {
         assertEquals(1, result.getTotal());
         assertEquals("zhangsan", result.getRecords().get(0).getUsername());
         assertEquals(CampusVerifyStatusEnum.PENDING, result.getRecords().get(0).getCampusVerifyStatus());
+    }
+
+    @Test
+    void pageAdminUsersShouldReturnPagedUserList() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("zhangsan");
+        user.setNickname("张三");
+        user.setEmail("zhangsan@example.com");
+        user.setPhone("13800000000");
+        user.setStudentNo("20240001");
+        user.setMajor("软件工程");
+        user.setRole(UserRoleEnum.USER);
+        user.setStatus(UserStatusEnum.BANNED);
+        user.setCampusVerifyStatus(CampusVerifyStatusEnum.APPROVED);
+        user.setBanReason("发布违规商品");
+        user.setBanAdminId(7L);
+        user.setBanTime(LocalDateTime.now().minusHours(2));
+
+        Page<User> page = new Page<>(1, 10);
+        page.setTotal(1);
+        page.setRecords(List.of(user));
+
+        when(userMapper.selectPage(any(Page.class), any())).thenReturn(page);
+
+        PageResult<AdminUserListVO> result = userService.pageAdminUsers(new AdminUserQueryDTO());
+
+        assertEquals(1, result.getTotal());
+        assertEquals("zhangsan", result.getRecords().get(0).getUsername());
+        assertEquals(UserStatusEnum.BANNED, result.getRecords().get(0).getStatus());
+        assertEquals("发布违规商品", result.getRecords().get(0).getBanReason());
+    }
+
+    @Test
+    void getAdminUserDetailShouldReturnUserDetail() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("zhangsan");
+        user.setNickname("张三");
+        user.setEmail("zhangsan@example.com");
+        user.setPhone("13800000000");
+        user.setStudentNo("20240001");
+        user.setMajor("软件工程");
+        user.setAvatarUrl("http://example.com/avatar.jpg");
+        user.setRole(UserRoleEnum.USER);
+        user.setStatus(UserStatusEnum.NORMAL);
+        user.setCampusVerifyStatus(CampusVerifyStatusEnum.APPROVED);
+        user.setBanReason("历史封禁");
+        user.setBanAdminId(7L);
+        user.setBanTime(LocalDateTime.now().minusDays(3));
+        user.setUnbanReason("已完成整改");
+        user.setUnbanAdminId(9L);
+        user.setUnbanTime(LocalDateTime.now().minusDays(1));
+
+        when(userMapper.selectById(1L)).thenReturn(user);
+
+        AdminUserDetailVO detailVO = userService.getAdminUserDetail(1L);
+
+        assertEquals(1L, detailVO.getId());
+        assertEquals("zhangsan", detailVO.getUsername());
+        assertEquals("历史封禁", detailVO.getBanReason());
+        assertEquals("已完成整改", detailVO.getUnbanReason());
+        assertEquals(UserRoleEnum.USER, detailVO.getRole());
+    }
+
+    @Test
+    void banUserShouldUpdateStatusAndBanMetadata() {
+        User user = new User();
+        user.setId(1L);
+        user.setRole(UserRoleEnum.USER);
+        user.setStatus(UserStatusEnum.NORMAL);
+        user.setUnbanReason("旧解封原因");
+        user.setUnbanAdminId(5L);
+        user.setUnbanTime(LocalDateTime.now().minusDays(1));
+
+        AdminUserBanDTO dto = new AdminUserBanDTO();
+        dto.setReason("发布违规商品");
+
+        when(userMapper.selectById(1L)).thenReturn(user);
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+
+        userService.banUser(1L, 7L, dto);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).updateById(captor.capture());
+        User updatedUser = captor.getValue();
+
+        assertEquals(UserStatusEnum.BANNED, updatedUser.getStatus());
+        assertEquals("发布违规商品", updatedUser.getBanReason());
+        assertEquals(7L, updatedUser.getBanAdminId());
+        assertNotNull(updatedUser.getBanTime());
+        assertNull(updatedUser.getUnbanReason());
+        assertNull(updatedUser.getUnbanAdminId());
+        assertNull(updatedUser.getUnbanTime());
+    }
+
+    @Test
+    void unbanUserShouldUpdateStatusAndUnbanMetadata() {
+        User user = new User();
+        user.setId(1L);
+        user.setRole(UserRoleEnum.USER);
+        user.setStatus(UserStatusEnum.BANNED);
+        user.setBanReason("发布违规商品");
+        user.setBanAdminId(7L);
+        LocalDateTime banTime = LocalDateTime.now().minusDays(2);
+        user.setBanTime(banTime);
+
+        AdminUserUnbanDTO dto = new AdminUserUnbanDTO();
+        dto.setReason("已完成整改");
+
+        when(userMapper.selectById(1L)).thenReturn(user);
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+
+        userService.unbanUser(1L, 9L, dto);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).updateById(captor.capture());
+        User updatedUser = captor.getValue();
+
+        assertEquals(UserStatusEnum.NORMAL, updatedUser.getStatus());
+        assertEquals("发布违规商品", updatedUser.getBanReason());
+        assertEquals(banTime, updatedUser.getBanTime());
+        assertEquals("已完成整改", updatedUser.getUnbanReason());
+        assertEquals(9L, updatedUser.getUnbanAdminId());
+        assertNotNull(updatedUser.getUnbanTime());
+    }
+
+    @Test
+    void banUserShouldRejectAdminTarget() {
+        User user = new User();
+        user.setId(1L);
+        user.setRole(UserRoleEnum.ADMIN);
+        user.setStatus(UserStatusEnum.NORMAL);
+
+        AdminUserBanDTO dto = new AdminUserBanDTO();
+        dto.setReason("违规");
+
+        when(userMapper.selectById(1L)).thenReturn(user);
+
+        BaseException exception = assertThrows(BaseException.class, () -> userService.banUser(1L, 7L, dto));
+
+        assertEquals("封禁目标必须是普通用户", exception.getMessage());
+        verify(userMapper, never()).updateById(any(User.class));
+    }
+
+    @Test
+    void unbanUserShouldRejectNormalTarget() {
+        User user = new User();
+        user.setId(1L);
+        user.setRole(UserRoleEnum.USER);
+        user.setStatus(UserStatusEnum.NORMAL);
+
+        AdminUserUnbanDTO dto = new AdminUserUnbanDTO();
+        dto.setReason("恢复");
+
+        when(userMapper.selectById(1L)).thenReturn(user);
+
+        BaseException exception = assertThrows(BaseException.class, () -> userService.unbanUser(1L, 7L, dto));
+
+        assertEquals("当前用户不是封禁状态", exception.getMessage());
+        verify(userMapper, never()).updateById(any(User.class));
     }
 }

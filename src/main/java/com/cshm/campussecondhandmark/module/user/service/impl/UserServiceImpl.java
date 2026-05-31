@@ -10,6 +10,9 @@ import com.cshm.campussecondhandmark.common.result.PageResult;
 import com.cshm.campussecondhandmark.common.utils.JwtUtil;
 import com.cshm.campussecondhandmark.module.admin.pojo.dto.AdminLoginDTO;
 import com.cshm.campussecondhandmark.module.admin.pojo.vo.AdminLoginVO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserBanDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserQueryDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserUnbanDTO;
 import com.cshm.campussecondhandmark.module.user.enums.CampusVerifyStatusEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserStatusEnum;
@@ -21,6 +24,8 @@ import com.cshm.campussecondhandmark.module.user.pojo.dto.UserProfileUpdateDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserRegisterDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserUpdateDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import com.cshm.campussecondhandmark.module.user.pojo.vo.AdminUserDetailVO;
+import com.cshm.campussecondhandmark.module.user.pojo.vo.AdminUserListVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.CampusVerifyAuditVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.CurrentUserVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.UserLoginVO;
@@ -163,6 +168,43 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     @Override
+    public PageResult<AdminUserListVO> pageAdminUsers(AdminUserQueryDTO dto) {
+        AdminUserQueryDTO queryDTO = dto == null ? new AdminUserQueryDTO() : dto;
+        Page<User> page = new Page<>(normalizePageNum(queryDTO.getPageNum()), normalizePageSize(queryDTO.getPageSize()));
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(User::getRole, UserRoleEnum.USER);
+
+        if (queryDTO.getStatus() != null) {
+            queryWrapper.eq(User::getStatus, queryDTO.getStatus());
+        }
+
+        String keyword = trimToNull(queryDTO.getKeyword());
+        if (StringUtils.hasText(keyword)) {
+            queryWrapper.and(wrapper -> wrapper.like(User::getUsername, keyword)
+                    .or()
+                    .like(User::getNickname, keyword)
+                    .or()
+                    .like(User::getEmail, keyword)
+                    .or()
+                    .like(User::getStudentNo, keyword));
+        }
+        queryWrapper.orderByDesc(User::getCreateTime).orderByDesc(User::getId);
+
+        Page<User> resultPage = page(page, queryWrapper);
+        List<AdminUserListVO> records = resultPage.getRecords().stream()
+                .map(this::buildAdminUserListVO)
+                .collect(Collectors.toList());
+        return new PageResult<>(resultPage.getTotal(), records);
+    }
+
+    @Override
+    public AdminUserDetailVO getAdminUserDetail(Long userId) {
+        User user = getUserOrThrow(userId);
+        validateUserRole(user, "查看目标必须是普通用户");
+        return buildAdminUserDetailVO(user);
+    }
+
+    @Override
     public PageResult<CampusVerifyAuditVO> pageCampusVerifyUsers(CampusVerifyQueryDTO dto) {
         CampusVerifyQueryDTO queryDTO = dto == null ? new CampusVerifyQueryDTO() : dto;
         Page<User> page = new Page<>(normalizePageNum(queryDTO.getPageNum()), normalizePageSize(queryDTO.getPageSize()));
@@ -202,6 +244,61 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         userProfileUpdateDTO.setMajor(userUpdateDTO.getMajor());
         userProfileUpdateDTO.setAvatarUrl(userUpdateDTO.getAvatarUrl());
         updateProfile(userUpdateDTO.getId(), userProfileUpdateDTO);
+    }
+
+    @Override
+    @Transactional
+    public void banUser(Long userId, Long adminId, AdminUserBanDTO dto) {
+        if (dto == null) {
+            throw new BaseException("封禁信息不能为空");
+        }
+
+        requireAdminId(adminId);
+        String reason = requireReason(dto.getReason(), "封禁原因不能为空");
+
+        User user = getUserOrThrow(userId);
+        validateUserRole(user, "封禁目标必须是普通用户");
+        if (user.getStatus() != UserStatusEnum.NORMAL) {
+            throw new BaseException("当前用户不是正常状态");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        user.setStatus(UserStatusEnum.BANNED);
+        user.setBanReason(reason);
+        user.setBanTime(now);
+        user.setBanAdminId(adminId);
+        clearUnbanAuditFields(user);
+        user.setUpdateTime(now);
+        if (!updateById(user)) {
+            throw new BaseException("封禁失败");
+        }
+    }
+
+    @Override
+    @Transactional
+    public void unbanUser(Long userId, Long adminId, AdminUserUnbanDTO dto) {
+        if (dto == null) {
+            throw new BaseException("解封信息不能为空");
+        }
+
+        requireAdminId(adminId);
+        String reason = requireReason(dto.getReason(), "解封原因不能为空");
+
+        User user = getUserOrThrow(userId);
+        validateUserRole(user, "解封目标必须是普通用户");
+        if (user.getStatus() != UserStatusEnum.BANNED) {
+            throw new BaseException("当前用户不是封禁状态");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        user.setStatus(UserStatusEnum.NORMAL);
+        user.setUnbanReason(reason);
+        user.setUnbanTime(now);
+        user.setUnbanAdminId(adminId);
+        user.setUpdateTime(now);
+        if (!updateById(user)) {
+            throw new BaseException("解封失败");
+        }
     }
 
     @Override
@@ -420,6 +517,18 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return currentUserVO;
     }
 
+    private AdminUserListVO buildAdminUserListVO(User user) {
+        AdminUserListVO adminUserListVO = new AdminUserListVO();
+        BeanUtils.copyProperties(user, adminUserListVO);
+        return adminUserListVO;
+    }
+
+    private AdminUserDetailVO buildAdminUserDetailVO(User user) {
+        AdminUserDetailVO adminUserDetailVO = new AdminUserDetailVO();
+        BeanUtils.copyProperties(user, adminUserDetailVO);
+        return adminUserDetailVO;
+    }
+
     private CampusVerifyAuditVO buildCampusVerifyAuditVO(User user) {
         CampusVerifyAuditVO campusVerifyAuditVO = new CampusVerifyAuditVO();
         BeanUtils.copyProperties(user, campusVerifyAuditVO);
@@ -454,6 +563,32 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         user.setCampusVerifyRemark(null);
         user.setCampusVerifyTime(null);
         user.setCampusVerifyAdminId(null);
+    }
+
+    private void clearUnbanAuditFields(User user) {
+        user.setUnbanReason(null);
+        user.setUnbanTime(null);
+        user.setUnbanAdminId(null);
+    }
+
+    private void validateUserRole(User user, String message) {
+        if (user.getRole() != UserRoleEnum.USER) {
+            throw new BaseException(message);
+        }
+    }
+
+    private void requireAdminId(Long adminId) {
+        if (adminId == null) {
+            throw new BaseException("管理员未登录");
+        }
+    }
+
+    private String requireReason(String reason, String message) {
+        String trimmedReason = trimToNull(reason);
+        if (!StringUtils.hasText(trimmedReason)) {
+            throw new BaseException(message);
+        }
+        return trimmedReason;
     }
 
     private long normalizePageNum(Integer pageNum) {

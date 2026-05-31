@@ -3,11 +3,15 @@ package com.cshm.campussecondhandmark.common.interceptor;
 import com.cshm.campussecondhandmark.common.context.BaseContext;
 import com.cshm.campussecondhandmark.common.properties.JwtProperties;
 import com.cshm.campussecondhandmark.common.utils.JwtUtil;
+import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
+import com.cshm.campussecondhandmark.module.user.enums.UserStatusEnum;
+import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import com.cshm.campussecondhandmark.module.user.service.UserService;
 import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.util.StringUtils;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -20,6 +24,9 @@ public class JwtTokenUserInterceptor implements HandlerInterceptor {
 
     @Autowired
     private JwtProperties jwtProperties;
+
+    @Autowired
+    private UserService userService;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
@@ -41,6 +48,11 @@ public class JwtTokenUserInterceptor implements HandlerInterceptor {
             if (!"user".equals(tokenType)) {
                 response.setStatus(401);
                 return false;
+            }
+
+            User user = userService.get(userId);
+            if (user.getRole() != UserRoleEnum.USER || user.getStatus() == UserStatusEnum.BANNED) {
+                throw new IllegalStateException("user token is not allowed");
             }
 
             BaseContext.setCurrentId(userId);
