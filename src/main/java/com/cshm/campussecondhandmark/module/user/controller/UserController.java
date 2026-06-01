@@ -2,6 +2,10 @@ package com.cshm.campussecondhandmark.module.user.controller;
 
 import com.cshm.campussecondhandmark.common.context.BaseContext;
 import com.cshm.campussecondhandmark.common.result.Result;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.ForgotPasswordCodeSendDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.ForgotPasswordResetDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.RegisterCodeSendDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.UserChangePasswordDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserLoginDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserProfileUpdateDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserRegisterDTO;
@@ -42,6 +46,44 @@ public class UserController {
     public Result<UserLoginVO> register(@ApiParam(value = "用户注册请求", required = true) @RequestBody UserRegisterDTO userRegisterDTO) {
         log.info("用户注册，用户名={}，邮箱={}", userRegisterDTO.getUsername(), userRegisterDTO.getEmail());
         return Result.success(userService.register(userRegisterDTO));
+    }
+
+    @PostMapping("/api/auth/register/code")
+    @ApiOperation("发送注册邮箱验证码")
+    public Result<Void> sendRegisterCode(
+            @ApiParam(value = "发送注册邮箱验证码请求", required = true) @RequestBody RegisterCodeSendDTO dto) {
+        log.info("发送注册邮箱验证码，邮箱={}", dto.getEmail());
+        userService.sendRegisterCode(dto);
+        return Result.success();
+    }
+
+    @PostMapping("/api/auth/change-password")
+    @ApiOperation("修改当前登录用户密码")
+    @ApiImplicitParam(name = "token", value = "用户登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
+    public Result<Void> changePassword(
+            @ApiParam(value = "修改密码请求", required = true) @RequestBody UserChangePasswordDTO userChangePasswordDTO) {
+        Long currentUserId = BaseContext.getCurrentId();
+        log.info("修改当前登录用户密码，用户ID={}", currentUserId);
+        userService.changePassword(currentUserId, userChangePasswordDTO);
+        return Result.success();
+    }
+
+    @PostMapping("/api/auth/forgot-password/code")
+    @ApiOperation("发送找回密码邮箱验证码")
+    public Result<Void> sendForgotPasswordCode(
+            @ApiParam(value = "发送找回密码验证码请求", required = true) @RequestBody ForgotPasswordCodeSendDTO dto) {
+        log.info("发送找回密码邮箱验证码，邮箱={}", dto.getEmail());
+        userService.sendForgotPasswordCode(dto);
+        return Result.success();
+    }
+
+    @PostMapping("/api/auth/forgot-password/reset")
+    @ApiOperation("通过邮箱验证码重置密码")
+    public Result<Void> resetForgotPassword(
+            @ApiParam(value = "重置密码请求", required = true) @RequestBody ForgotPasswordResetDTO dto) {
+        log.info("通过邮箱验证码重置密码，邮箱={}", dto.getEmail());
+        userService.resetForgotPassword(dto);
+        return Result.success();
     }
 
     @GetMapping("/api/user/me")

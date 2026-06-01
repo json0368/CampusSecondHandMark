@@ -6,6 +6,10 @@ import com.cshm.campussecondhandmark.common.properties.JwtProperties;
 import com.cshm.campussecondhandmark.common.result.PageResult;
 import com.cshm.campussecondhandmark.module.admin.pojo.dto.AdminLoginDTO;
 import com.cshm.campussecondhandmark.module.admin.pojo.vo.AdminLoginVO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.RegisterCodeSendDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.ForgotPasswordCodeSendDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.ForgotPasswordResetDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.UserChangePasswordDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserBanDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserQueryDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserUnbanDTO;
@@ -13,6 +17,7 @@ import com.cshm.campussecondhandmark.module.user.enums.CampusVerifyStatusEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserStatusEnum;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
+import com.cshm.campussecondhandmark.module.user.service.EmailCodeService;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.CampusVerifyAuditDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.CampusVerifyQueryDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserLoginDTO;
@@ -42,9 +47,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -56,6 +63,9 @@ class UserServiceImplTest {
     @Mock
     private BCryptPasswordEncoder passwordEncoder;
 
+    @Mock
+    private EmailCodeService emailCodeService;
+
     private UserServiceImpl userService;
 
     @BeforeEach
@@ -63,6 +73,7 @@ class UserServiceImplTest {
         userService = new UserServiceImpl();
         ReflectionTestUtils.setField(userService, "baseMapper", userMapper);
         ReflectionTestUtils.setField(userService, "passwordEncoder", passwordEncoder);
+        ReflectionTestUtils.setField(userService, "emailCodeService", emailCodeService);
 
         JwtProperties jwtProperties = new JwtProperties();
         jwtProperties.setTokenName("token");
@@ -82,6 +93,7 @@ class UserServiceImplTest {
         dto.setStudentNo("20240001");
         dto.setMajor("软件工程");
         dto.setPassword("123456");
+        dto.setEmailCode("123456");
 
         when(userMapper.selectCount(any())).thenReturn(0L, 0L, 0L);
         when(passwordEncoder.encode("123456")).thenReturn("加密后的密码");
@@ -92,6 +104,8 @@ class UserServiceImplTest {
         }).when(userMapper).insert(any(User.class));
 
         UserLoginVO vo = userService.register(dto);
+
+        verify(emailCodeService).verifyRegisterCode("zhangsan@example.com", "123456");
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userMapper).insert(captor.capture());
@@ -125,6 +139,7 @@ class UserServiceImplTest {
         dto.setStudentNo("20240001");
         dto.setMajor("软件工程");
         dto.setPassword("123456");
+        dto.setEmailCode("123456");
 
         when(userMapper.selectCount(any())).thenReturn(0L, 1L);
 
@@ -132,6 +147,48 @@ class UserServiceImplTest {
 
         assertEquals("邮箱已被注册", exception.getMessage());
         verify(userMapper, never()).insert(any(User.class));
+    }
+
+    @Test
+    void registerShouldThrowWhenEmailCodeMissing() {
+        UserRegisterDTO dto = new UserRegisterDTO();
+        dto.setUsername("zhangsan");
+        dto.setNickname("张三");
+        dto.setEmail("zhangsan@example.com");
+        dto.setStudentNo("20240001");
+        dto.setMajor("软件工程");
+        dto.setPassword("123456");
+
+        BaseException exception = assertThrows(BaseException.class, () -> userService.register(dto));
+
+        assertEquals("邮箱验证码不能为空", exception.getMessage());
+        verify(userMapper, never()).insert(any(User.class));
+        verifyNoInteractions(emailCodeService);
+    }
+
+    @Test
+    void sendRegisterCodeShouldThrowWhenEmailAlreadyRegistered() {
+        RegisterCodeSendDTO dto = new RegisterCodeSendDTO();
+        dto.setEmail("zhangsan@example.com");
+
+        when(userMapper.selectCount(any())).thenReturn(1L);
+
+        BaseException exception = assertThrows(BaseException.class, () -> userService.sendRegisterCode(dto));
+
+        assertEquals("邮箱已被注册", exception.getMessage());
+        verifyNoInteractions(emailCodeService);
+    }
+
+    @Test
+    void sendRegisterCodeShouldCallEmailCodeServiceWhenEmailNotRegistered() {
+        RegisterCodeSendDTO dto = new RegisterCodeSendDTO();
+        dto.setEmail("zhangsan@example.com");
+
+        when(userMapper.selectCount(any())).thenReturn(0L);
+
+        userService.sendRegisterCode(dto);
+
+        verify(emailCodeService).sendRegisterCode("zhangsan@example.com");
     }
 
     @Test
@@ -515,5 +572,120 @@ class UserServiceImplTest {
 
         assertEquals("当前用户不是封禁状态", exception.getMessage());
         verify(userMapper, never()).updateById(any(User.class));
+    }
+
+    @Test
+    void changePasswordShouldUpdatePasswordHashAndCredentialVersion() {
+        User user = new User();
+        user.setId(1L);
+        user.setRole(UserRoleEnum.USER);
+        user.setStatus(UserStatusEnum.NORMAL);
+        user.setPasswordHash("old-hash");
+        user.setCredentialVersion(2);
+
+        UserChangePasswordDTO dto = new UserChangePasswordDTO();
+        dto.setOldPassword("123456");
+        dto.setNewPassword("654321");
+        dto.setConfirmPassword("654321");
+
+        when(userMapper.selectById(1L)).thenReturn(user);
+        when(passwordEncoder.matches("123456", "old-hash")).thenReturn(true);
+        when(passwordEncoder.matches("654321", "old-hash")).thenReturn(false);
+        when(passwordEncoder.encode("654321")).thenReturn("new-hash");
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+
+        userService.changePassword(1L, dto);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).updateById(captor.capture());
+        User updatedUser = captor.getValue();
+
+        assertEquals("new-hash", updatedUser.getPasswordHash());
+        assertEquals(3, updatedUser.getCredentialVersion());
+        assertNotNull(updatedUser.getUpdateTime());
+    }
+
+    @Test
+    void changePasswordShouldRejectWrongOldPassword() {
+        User user = new User();
+        user.setId(1L);
+        user.setRole(UserRoleEnum.USER);
+        user.setStatus(UserStatusEnum.NORMAL);
+        user.setPasswordHash("old-hash");
+        user.setCredentialVersion(0);
+
+        UserChangePasswordDTO dto = new UserChangePasswordDTO();
+        dto.setOldPassword("wrong-password");
+        dto.setNewPassword("654321");
+        dto.setConfirmPassword("654321");
+
+        when(userMapper.selectById(1L)).thenReturn(user);
+        when(passwordEncoder.matches("wrong-password", "old-hash")).thenReturn(false);
+
+        BaseException exception = assertThrows(BaseException.class, () -> userService.changePassword(1L, dto));
+
+        assertEquals("旧密码错误", exception.getMessage());
+        verify(userMapper, never()).updateById(any(User.class));
+    }
+
+    @Test
+    void sendForgotPasswordCodeShouldCallEmailCodeServiceWhenUserExists() {
+        User user = new User();
+        user.setId(1L);
+        user.setEmail("zhangsan@example.com");
+        user.setRole(UserRoleEnum.USER);
+
+        ForgotPasswordCodeSendDTO dto = new ForgotPasswordCodeSendDTO();
+        dto.setEmail("zhangsan@example.com");
+
+        when(userMapper.selectOne(any())).thenReturn(user);
+
+        userService.sendForgotPasswordCode(dto);
+
+        verify(emailCodeService).sendForgotPasswordCode("zhangsan@example.com");
+    }
+
+    @Test
+    void sendForgotPasswordCodeShouldIgnoreUnknownEmail() {
+        ForgotPasswordCodeSendDTO dto = new ForgotPasswordCodeSendDTO();
+        dto.setEmail("nobody@example.com");
+
+        when(userMapper.selectOne(any())).thenReturn(null);
+
+        userService.sendForgotPasswordCode(dto);
+
+        verifyNoInteractions(emailCodeService);
+    }
+
+    @Test
+    void resetForgotPasswordShouldUpdatePasswordHashAndCredentialVersion() {
+        User user = new User();
+        user.setId(1L);
+        user.setEmail("zhangsan@example.com");
+        user.setRole(UserRoleEnum.USER);
+        user.setPasswordHash("old-hash");
+        user.setCredentialVersion(5);
+
+        ForgotPasswordResetDTO dto = new ForgotPasswordResetDTO();
+        dto.setEmail("zhangsan@example.com");
+        dto.setCode("123456");
+        dto.setNewPassword("654321");
+        dto.setConfirmPassword("654321");
+
+        when(userMapper.selectOne(any())).thenReturn(user);
+        when(passwordEncoder.encode("654321")).thenReturn("new-hash");
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+
+        userService.resetForgotPassword(dto);
+
+        verify(emailCodeService).verifyForgotPasswordCode(eq("zhangsan@example.com"), eq("123456"));
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).updateById(captor.capture());
+        User updatedUser = captor.getValue();
+
+        assertEquals("new-hash", updatedUser.getPasswordHash());
+        assertEquals(6, updatedUser.getCredentialVersion());
+        assertNotNull(updatedUser.getUpdateTime());
     }
 }

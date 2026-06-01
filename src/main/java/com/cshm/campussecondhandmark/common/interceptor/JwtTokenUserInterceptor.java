@@ -55,6 +55,10 @@ public class JwtTokenUserInterceptor implements HandlerInterceptor {
                 throw new IllegalStateException("user token is not allowed");
             }
 
+            if (extractCredentialVersion(claims) != safeCredentialVersion(user)) {
+                throw new IllegalStateException("credential version mismatch");
+            }
+
             BaseContext.setCurrentId(userId);
             return true;
         } catch (Exception ex) {
@@ -76,6 +80,18 @@ public class JwtTokenUserInterceptor implements HandlerInterceptor {
             path = path.substring(contextPath.length());
         }
         return "/api/products".equals(path) || path.matches("^/api/products/\\d+$");
+    }
+
+    private int extractCredentialVersion(Claims claims) {
+        Object credentialVersion = claims.get("credentialVersion");
+        if (!(credentialVersion instanceof Number)) {
+            throw new IllegalStateException("credential version missing");
+        }
+        return ((Number) credentialVersion).intValue();
+    }
+
+    private int safeCredentialVersion(User user) {
+        return user.getCredentialVersion() == null ? 0 : user.getCredentialVersion();
     }
 
     @Override

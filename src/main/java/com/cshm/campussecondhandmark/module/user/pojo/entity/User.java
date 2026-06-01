@@ -1,6 +1,5 @@
 package com.cshm.campussecondhandmark.module.user.pojo.entity;
 
-import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.cshm.campussecondhandmark.module.user.enums.CampusVerifyStatusEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
@@ -17,9 +16,9 @@ import java.time.LocalDateTime;
 public class User {
 
     @ApiModelProperty(value = "用户 ID")
-    Long id;
+    private Long id;
 
-    @ApiModelProperty(value = "用户姓名")
+    @ApiModelProperty(value = "用户名")
     private String username;
 
     @ApiModelProperty(value = "用户密码")
@@ -49,7 +48,10 @@ public class User {
     @ApiModelProperty(value = "用户账号状态")
     private UserStatusEnum status;
 
-    @ApiModelProperty(value = "用户校园认证状态")
+    @ApiModelProperty(value = "凭证版本号")
+    private Integer credentialVersion;
+
+    @ApiModelProperty(value = "校园认证状态")
     private CampusVerifyStatusEnum campusVerifyStatus;
 
     @ApiModelProperty(value = "校园认证审核备注")
@@ -58,7 +60,7 @@ public class User {
     @ApiModelProperty(value = "校园认证审核时间")
     private LocalDateTime campusVerifyTime;
 
-    @ApiModelProperty(value = "校园认证审核管理员ID")
+    @ApiModelProperty(value = "校园认证审核管理员 ID")
     private Long campusVerifyAdminId;
 
     @ApiModelProperty(value = "封禁原因")
@@ -67,7 +69,7 @@ public class User {
     @ApiModelProperty(value = "封禁时间")
     private LocalDateTime banTime;
 
-    @ApiModelProperty(value = "封禁管理员ID")
+    @ApiModelProperty(value = "封禁管理员 ID")
     private Long banAdminId;
 
     @ApiModelProperty(value = "解封原因")
@@ -76,15 +78,15 @@ public class User {
     @ApiModelProperty(value = "解封时间")
     private LocalDateTime unbanTime;
 
-    @ApiModelProperty(value = "解封管理员ID")
+    @ApiModelProperty(value = "解封管理员 ID")
     private Long unbanAdminId;
 
     @ApiModelProperty(value = "用户最后一次登录时间")
     private LocalDateTime lastLoginTime;
 
     @ApiModelProperty(value = "用户创建时间")
-    LocalDateTime createTime;
+    private LocalDateTime createTime;
 
     @ApiModelProperty(value = "用户更新时间")
-    LocalDateTime updateTime;
+    private LocalDateTime updateTime;
 }

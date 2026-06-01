@@ -64,11 +64,12 @@ class JwtTokenUserInterceptorTest {
         user.setId(1L);
         user.setRole(UserRoleEnum.USER);
         user.setStatus(UserStatusEnum.NORMAL);
+        user.setCredentialVersion(2);
 
         when(userService.get(1L)).thenReturn(user);
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/user/me");
-        request.addHeader("token", buildUserToken(1L));
+        request.addHeader("token", buildUserToken(1L, 2));
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         boolean allowed = interceptor.preHandle(request, response, handlerMethod);
@@ -83,11 +84,12 @@ class JwtTokenUserInterceptorTest {
         user.setId(1L);
         user.setRole(UserRoleEnum.USER);
         user.setStatus(UserStatusEnum.BANNED);
+        user.setCredentialVersion(2);
 
         when(userService.get(1L)).thenReturn(user);
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/user/me");
-        request.addHeader("token", buildUserToken(1L));
+        request.addHeader("token", buildUserToken(1L, 2));
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         boolean allowed = interceptor.preHandle(request, response, handlerMethod);
@@ -108,11 +110,33 @@ class JwtTokenUserInterceptorTest {
         verifyNoInteractions(userService);
     }
 
-    private String buildUserToken(Long userId) {
+    @Test
+    void preHandleShouldRejectTokenWhenCredentialVersionMismatch() throws Exception {
+        User user = new User();
+        user.setId(1L);
+        user.setRole(UserRoleEnum.USER);
+        user.setStatus(UserStatusEnum.NORMAL);
+        user.setCredentialVersion(3);
+
+        when(userService.get(1L)).thenReturn(user);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/user/me");
+        request.addHeader("token", buildUserToken(1L, 2));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        boolean allowed = interceptor.preHandle(request, response, handlerMethod);
+
+        assertFalse(allowed);
+        assertEquals(401, response.getStatus());
+        assertNull(BaseContext.getCurrentId());
+    }
+
+    private String buildUserToken(Long userId, Integer credentialVersion) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("id", userId);
         claims.put("role", UserRoleEnum.USER.getCode());
         claims.put("tokenType", "user");
+        claims.put("credentialVersion", credentialVersion);
         return JwtUtil.createJWT("user-secret", 7200000L, claims);
     }
 

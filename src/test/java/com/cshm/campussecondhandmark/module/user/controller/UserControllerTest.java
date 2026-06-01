@@ -85,6 +85,37 @@ class UserControllerTest {
     }
 
     @Test
+    void registerShouldSupportApiAuthRegisterPathAndEmailCodeField() throws Exception {
+        UserLoginVO userLoginVO = new UserLoginVO();
+        userLoginVO.setId(1L);
+        userLoginVO.setNickname("张三");
+        userLoginVO.setRole(UserRoleEnum.USER);
+        userLoginVO.setToken("user-token");
+
+        when(userService.register(any())).thenReturn(userLoginVO);
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"zhangsan\",\"nickname\":\"张三\",\"email\":\"zhangsan@example.com\",\"studentNo\":\"20240001\",\"major\":\"软件工程\",\"password\":\"123456\",\"emailCode\":\"123456\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1))
+                .andExpect(jsonPath("$.data.id").value(1));
+
+        verify(userService).register(any());
+    }
+
+    @Test
+    void registerCodeShouldSupportApiAuthRegisterCodePath() throws Exception {
+        mockMvc.perform(post("/api/auth/register/code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"zhangsan@example.com\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1));
+
+        verify(userService).sendRegisterCode(any());
+    }
+
+    @Test
     void getCurrentUserShouldSupportApiUserMePath() throws Exception {
         CurrentUserVO currentUserVO = new CurrentUserVO();
         currentUserVO.setId(1L);
@@ -132,6 +163,41 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.code").value(1));
 
         verify(userService).updateProfile(eq(3L), any());
+    }
+
+    @Test
+    void changePasswordShouldSupportApiAuthChangePasswordPath() throws Exception {
+        BaseContext.setCurrentId(3L);
+
+        mockMvc.perform(post("/api/auth/change-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"oldPassword\":\"123456\",\"newPassword\":\"654321\",\"confirmPassword\":\"654321\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1));
+
+        verify(userService).changePassword(eq(3L), any());
+    }
+
+    @Test
+    void forgotPasswordCodeShouldSupportApiAuthForgotPasswordCodePath() throws Exception {
+        mockMvc.perform(post("/api/auth/forgot-password/code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"zhangsan@example.com\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1));
+
+        verify(userService).sendForgotPasswordCode(any());
+    }
+
+    @Test
+    void forgotPasswordResetShouldSupportApiAuthForgotPasswordResetPath() throws Exception {
+        mockMvc.perform(post("/api/auth/forgot-password/reset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"zhangsan@example.com\",\"code\":\"123456\",\"newPassword\":\"654321\",\"confirmPassword\":\"654321\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1));
+
+        verify(userService).resetForgotPassword(any());
     }
 
     @Test

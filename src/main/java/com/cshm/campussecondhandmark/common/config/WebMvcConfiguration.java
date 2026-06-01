@@ -46,6 +46,7 @@ public class WebMvcConfiguration extends WebMvcConfigurationSupport {
                 .addPathPatterns("/admin-api/**")
                 .excludePathPatterns(
                         "/admin-api/auth/login",
+                        "/admin-api/mail/outlook/oauth/callback",
                         "/doc.html",
                         "/webjars/**",
                         "/swagger-resources/**",

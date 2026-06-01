@@ -10,6 +10,10 @@ import com.cshm.campussecondhandmark.common.result.PageResult;
 import com.cshm.campussecondhandmark.common.utils.JwtUtil;
 import com.cshm.campussecondhandmark.module.admin.pojo.dto.AdminLoginDTO;
 import com.cshm.campussecondhandmark.module.admin.pojo.vo.AdminLoginVO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.ForgotPasswordCodeSendDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.ForgotPasswordResetDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.RegisterCodeSendDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.UserChangePasswordDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserBanDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserQueryDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserUnbanDTO;
@@ -30,6 +34,7 @@ import com.cshm.campussecondhandmark.module.user.pojo.vo.CampusVerifyAuditVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.CurrentUserVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.UserLoginVO;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.UserProfileVO;
+import com.cshm.campussecondhandmark.module.user.service.EmailCodeService;
 import com.cshm.campussecondhandmark.module.user.service.UserService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,6 +63,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Autowired
     private JwtProperties jwtProperties;
 
+    @Autowired
+    private EmailCodeService emailCodeService;
+
     @Override
     @Transactional
     public UserLoginVO login(UserLoginDTO userLoginDTO) {
@@ -76,6 +84,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         String username = trimToNull(userRegisterDTO.getUsername());
         String nickname = trimToNull(userRegisterDTO.getNickname());
         String email = trimToNull(userRegisterDTO.getEmail());
+        String emailCode = trimToNull(userRegisterDTO.getEmailCode());
         String phone = trimToNull(userRegisterDTO.getPhone());
         String studentNo = trimToNull(userRegisterDTO.getStudentNo());
         String major = trimToNull(userRegisterDTO.getMajor());
@@ -99,6 +108,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (!StringUtils.hasText(password)) {
             throw new BaseException("密码不能为空");
         }
+        if (!StringUtils.hasText(emailCode)) {
+            throw new BaseException("邮箱验证码不能为空");
+        }
 
         if (exists(User::getUsername, username)) {
             throw new BaseException("用户名已被注册");
@@ -113,6 +125,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             throw new BaseException("学号已被注册");
         }
 
+        emailCodeService.verifyRegisterCode(email, emailCode);
+
         LocalDateTime now = LocalDateTime.now();
         User user = new User();
         user.setUsername(username);
@@ -124,6 +138,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         user.setPasswordHash(passwordEncoder.encode(password));
         user.setRole(UserRoleEnum.USER);
         user.setStatus(UserStatusEnum.NORMAL);
+        user.setCredentialVersion(0);
         user.setCampusVerifyStatus(CampusVerifyStatusEnum.PENDING);
         user.setLastLoginTime(now);
         user.setCreateTime(now);
@@ -406,6 +421,128 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
     }
 
+    @Override
+    @Transactional
+    public void changePassword(Long currentUserId, UserChangePasswordDTO dto) {
+        if (dto == null) {
+            throw new BaseException("修改密码信息不能为空");
+        }
+
+        User user = getUserOrThrow(currentUserId);
+        validateUserRole(user, "修改密码目标必须是普通用户");
+        validateNotBanned(user);
+
+        String oldPassword = dto.getOldPassword();
+        String newPassword = trimToNull(dto.getNewPassword());
+        String confirmPassword = trimToNull(dto.getConfirmPassword());
+        if (!StringUtils.hasText(oldPassword)) {
+            throw new BaseException("旧密码不能为空");
+        }
+        if (!StringUtils.hasText(newPassword)) {
+            throw new BaseException("新密码不能为空");
+        }
+        if (!StringUtils.hasText(confirmPassword)) {
+            throw new BaseException("确认密码不能为空");
+        }
+        if (!passwordEncoder.matches(oldPassword, user.getPasswordHash())) {
+            throw new BaseException("旧密码错误");
+        }
+        if (!newPassword.equals(confirmPassword)) {
+            throw new BaseException("两次输入的新密码不一致");
+        }
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw new BaseException("新密码不能与旧密码相同");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setCredentialVersion(safeCredentialVersion(user) + 1);
+        user.setUpdateTime(LocalDateTime.now());
+        if (!updateById(user)) {
+            throw new BaseException("修改密码失败");
+        }
+    }
+
+    @Override
+    public void sendRegisterCode(RegisterCodeSendDTO dto) {
+        if (dto == null) {
+            throw new BaseException("发送验证码信息不能为空");
+        }
+
+        String email = trimToNull(dto.getEmail());
+        if (!StringUtils.hasText(email)) {
+            throw new BaseException("邮箱不能为空");
+        }
+        if (exists(User::getEmail, email)) {
+            throw new BaseException("邮箱已被注册");
+        }
+
+        emailCodeService.sendRegisterCode(email);
+    }
+
+    @Override
+    public void sendForgotPasswordCode(ForgotPasswordCodeSendDTO dto) {
+        if (dto == null) {
+            throw new BaseException("发送验证码信息不能为空");
+        }
+
+        String email = trimToNull(dto.getEmail());
+        if (!StringUtils.hasText(email)) {
+            throw new BaseException("邮箱不能为空");
+        }
+
+        User user = findUserByEmail(email);
+        if (user == null || user.getRole() != UserRoleEnum.USER) {
+            return;
+        }
+
+        emailCodeService.sendForgotPasswordCode(email);
+    }
+
+    @Override
+    @Transactional
+    public void resetForgotPassword(ForgotPasswordResetDTO dto) {
+        if (dto == null) {
+            throw new BaseException("重置密码信息不能为空");
+        }
+
+        String email = trimToNull(dto.getEmail());
+        String code = trimToNull(dto.getCode());
+        String newPassword = trimToNull(dto.getNewPassword());
+        String confirmPassword = trimToNull(dto.getConfirmPassword());
+        if (!StringUtils.hasText(email)) {
+            throw new BaseException("邮箱不能为空");
+        }
+        if (!StringUtils.hasText(code)) {
+            throw new BaseException("验证码不能为空");
+        }
+        if (!StringUtils.hasText(newPassword)) {
+            throw new BaseException("新密码不能为空");
+        }
+        if (!StringUtils.hasText(confirmPassword)) {
+            throw new BaseException("确认密码不能为空");
+        }
+        if (!newPassword.equals(confirmPassword)) {
+            throw new BaseException("两次输入的新密码不一致");
+        }
+
+        User user = findUserByEmail(email);
+        if (user == null || user.getRole() != UserRoleEnum.USER) {
+            throw new BaseException("用户不存在");
+        }
+
+        emailCodeService.verifyForgotPasswordCode(email, code);
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw new BaseException("新密码不能与旧密码相同");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setCredentialVersion(safeCredentialVersion(user) + 1);
+        user.setUpdateTime(LocalDateTime.now());
+        if (!updateById(user)) {
+            throw new BaseException("重置密码失败");
+        }
+    }
+
     private User validateLogin(UserLoginDTO userLoginDTO) {
         String email = trimToNull(userLoginDTO.getEmail());
         String password = userLoginDTO.getPassword();
@@ -448,13 +585,17 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     private User getUserByEmail(String email) {
-        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(User::getEmail, email);
-        User user = baseMapper.selectOne(queryWrapper);
+        User user = findUserByEmail(email);
         if (user == null) {
             throw new BaseException("邮箱或密码错误");
         }
         return user;
+    }
+
+    private User findUserByEmail(String email) {
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(User::getEmail, email);
+        return baseMapper.selectOne(queryWrapper);
     }
 
     private void validatePassword(User user, String password) {
@@ -473,6 +614,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         user.setLastLoginTime(LocalDateTime.now());
         user.setUpdateTime(LocalDateTime.now());
         updateById(user);
+    }
+
+    private int safeCredentialVersion(User user) {
+        return user.getCredentialVersion() == null ? 0 : user.getCredentialVersion();
     }
 
     private <T> boolean exists(SFunction<User, T> column, T value) {
@@ -555,6 +700,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         claims.put("id", user.getId());
         claims.put("role", user.getRole().getCode());
         claims.put("tokenType", isAdmin ? "admin" : "user");
+        claims.put("credentialVersion", safeCredentialVersion(user));
 
         return JwtUtil.createJWT(secretKey, ttl, claims);
     }

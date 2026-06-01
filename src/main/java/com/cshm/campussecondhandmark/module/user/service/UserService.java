@@ -8,6 +8,10 @@ import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserQueryDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.AdminUserUnbanDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.CampusVerifyAuditDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.CampusVerifyQueryDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.ForgotPasswordCodeSendDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.ForgotPasswordResetDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.RegisterCodeSendDTO;
+import com.cshm.campussecondhandmark.module.user.pojo.dto.UserChangePasswordDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserLoginDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserProfileUpdateDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.UserRegisterDTO;
@@ -51,4 +55,12 @@ public interface UserService {
     void auditCampusVerify(Long userId, Long adminId, CampusVerifyAuditDTO dto);
 
     void updateProfile(Long currentUserId, UserProfileUpdateDTO userProfileUpdateDTO);
+
+    void changePassword(Long currentUserId, UserChangePasswordDTO dto);
+
+    void sendRegisterCode(RegisterCodeSendDTO dto);
+
+    void sendForgotPasswordCode(ForgotPasswordCodeSendDTO dto);
+
+    void resetForgotPassword(ForgotPasswordResetDTO dto);
 }

@@ -28,4 +28,7 @@ public class UserRegisterDTO {
 
     @ApiModelProperty(value = "密码", required = true, example = "123456")
     private String password;
+
+    @ApiModelProperty(value = "邮箱验证码", required = true, example = "123456")
+    private String emailCode;
 }
