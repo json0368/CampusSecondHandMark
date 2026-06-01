@@ -42,3 +42,4 @@ mvnw.cmd
 .m2repo/
 application.yml
 docs/
+.worktrees/
