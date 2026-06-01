@@ -20,6 +20,7 @@ import com.cshm.campussecondhandmark.module.product.pojo.entity.ProductImage;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductAuditVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductDetailVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductSummaryVO;
+import com.cshm.campussecondhandmark.module.product.service.ProductInteractionService;
 import com.cshm.campussecondhandmark.module.user.enums.CampusVerifyStatusEnum;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
@@ -61,6 +62,9 @@ class ProductServiceImplTest {
     @Mock
     private UserMapper userMapper;
 
+    @Mock
+    private ProductInteractionService productInteractionService;
+
     private ProductServiceImpl productService;
 
     @BeforeEach
@@ -70,6 +74,7 @@ class ProductServiceImplTest {
         ReflectionTestUtils.setField(productService, "productImageMapper", productImageMapper);
         ReflectionTestUtils.setField(productService, "productCategoryMapper", productCategoryMapper);
         ReflectionTestUtils.setField(productService, "userMapper", userMapper);
+        ReflectionTestUtils.setField(productService, "productInteractionService", productInteractionService);
     }
 
     @Test
@@ -192,6 +197,37 @@ class ProductServiceImplTest {
         assertEquals(1, sellerView.getImages().size());
         assertFalse(sellerView.getCanOrder());
         assertFalse(sellerView.getCanChat());
+    }
+
+    @Test
+    void getProductDetailShouldMarkFavoriteAndRecordBrowseHistoryForOtherUser() {
+        Product product = approvedOnShelfProduct();
+
+        when(productMapper.selectById(10L)).thenReturn(product);
+        when(productCategoryMapper.selectById(1L)).thenReturn(enabledCategory());
+        when(userMapper.selectById(2L)).thenReturn(seller());
+        when(productImageMapper.selectList(any())).thenReturn(List.of(productImage()));
+        when(productInteractionService.isFavorited(3L, 10L)).thenReturn(true);
+
+        ProductDetailVO detail = productService.getProductDetail(10L, 3L);
+
+        assertTrue(detail.getFavorited());
+        verify(productInteractionService).recordBrowseHistory(3L, 10L);
+    }
+
+    @Test
+    void getProductDetailShouldNotRecordBrowseHistoryForSelfProduct() {
+        Product product = approvedOnShelfProduct();
+
+        when(productMapper.selectById(10L)).thenReturn(product);
+        when(productCategoryMapper.selectById(1L)).thenReturn(enabledCategory());
+        when(userMapper.selectById(2L)).thenReturn(seller());
+        when(productImageMapper.selectList(any())).thenReturn(List.of(productImage()));
+
+        ProductDetailVO detail = productService.getProductDetail(10L, 2L);
+
+        assertFalse(detail.getFavorited());
+        verify(productInteractionService, never()).recordBrowseHistory(2L, 10L);
     }
 
     @Test

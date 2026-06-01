@@ -64,4 +64,7 @@ public class ProductDetailVO {
 
     @ApiModelProperty(value = "当前用户是否可以发起聊天", example = "true")
     private Boolean canChat;
+
+    @ApiModelProperty(value = "当前用户是否已收藏", example = "false")
+    private Boolean favorited;
 }

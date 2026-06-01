@@ -10,6 +10,7 @@ import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductUpdateDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.MyProductVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductDetailVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductSummaryVO;
+import com.cshm.campussecondhandmark.module.product.service.ProductInteractionService;
 import com.cshm.campussecondhandmark.module.product.service.ProductService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiImplicitParam;
@@ -27,6 +28,9 @@ public class ProductController {
 
     @Autowired
     private ProductService productService;
+
+    @Autowired
+    private ProductInteractionService productInteractionService;
 
     @PostMapping("")
     @ApiOperation(value = "发布商品", notes = "发布后进入待审核状态")
@@ -84,6 +88,56 @@ public class ProductController {
         Long currentUserId = BaseContext.getCurrentId();
         log.info("主动下架商品，用户ID={}，商品ID={}", currentUserId, productId);
         productService.offShelfProduct(currentUserId, productId);
+        return Result.success();
+    }
+
+    @PostMapping("/{productId}/favorite")
+    @ApiOperation("收藏商品")
+    @ApiImplicitParam(name = "token", value = "用户登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
+    public Result<Void> favoriteProduct(
+            @ApiParam(value = "商品 ID", required = true, example = "10") @PathVariable Long productId) {
+        Long currentUserId = BaseContext.getCurrentId();
+        log.info("收藏商品，用户ID={}，商品ID={}", currentUserId, productId);
+        productInteractionService.favoriteProduct(currentUserId, productId);
+        return Result.success();
+    }
+
+    @DeleteMapping("/{productId}/favorite")
+    @ApiOperation("取消收藏商品")
+    @ApiImplicitParam(name = "token", value = "用户登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
+    public Result<Void> unfavoriteProduct(
+            @ApiParam(value = "商品 ID", required = true, example = "10") @PathVariable Long productId) {
+        Long currentUserId = BaseContext.getCurrentId();
+        log.info("取消收藏商品，用户ID={}，商品ID={}", currentUserId, productId);
+        productInteractionService.unfavoriteProduct(currentUserId, productId);
+        return Result.success();
+    }
+
+    @GetMapping("/favorites")
+    @ApiOperation("分页查询我的收藏商品")
+    @ApiImplicitParam(name = "token", value = "用户登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
+    public Result<PageResult<ProductSummaryVO>> pageMyFavorites(ProductQueryDTO dto) {
+        Long currentUserId = BaseContext.getCurrentId();
+        log.info("分页查询我的收藏商品，用户ID={}", currentUserId);
+        return Result.success(productInteractionService.pageMyFavorites(currentUserId, dto));
+    }
+
+    @GetMapping("/browse-history")
+    @ApiOperation("分页查询我的浏览历史")
+    @ApiImplicitParam(name = "token", value = "用户登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
+    public Result<PageResult<ProductSummaryVO>> pageMyBrowseHistory(ProductQueryDTO dto) {
+        Long currentUserId = BaseContext.getCurrentId();
+        log.info("分页查询我的浏览历史，用户ID={}", currentUserId);
+        return Result.success(productInteractionService.pageMyBrowseHistory(currentUserId, dto));
+    }
+
+    @DeleteMapping("/browse-history")
+    @ApiOperation("清空我的浏览历史")
+    @ApiImplicitParam(name = "token", value = "用户登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
+    public Result<Void> clearMyBrowseHistory() {
+        Long currentUserId = BaseContext.getCurrentId();
+        log.info("清空我的浏览历史，用户ID={}", currentUserId);
+        productInteractionService.clearMyBrowseHistory(currentUserId);
         return Result.success();
     }
 }

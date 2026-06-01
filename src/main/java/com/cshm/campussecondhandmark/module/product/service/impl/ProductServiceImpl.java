@@ -25,6 +25,7 @@ import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductAuditVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductDetailVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductImageVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductSummaryVO;
+import com.cshm.campussecondhandmark.module.product.service.ProductInteractionService;
 import com.cshm.campussecondhandmark.module.product.service.ProductService;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
@@ -56,6 +57,8 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     private ProductCategoryMapper productCategoryMapper;
     @Autowired
     private UserMapper userMapper;
+    @Autowired
+    private ProductInteractionService productInteractionService;
 
     // ==================== 公开接口 ====================
 
@@ -172,7 +175,11 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         if (!visible && !seller) {
             throw new BaseException("商品不存在或未上架");
         }
-        return buildProductDetailVO(product, currentUserId, visible);
+        ProductDetailVO vo = buildProductDetailVO(product, currentUserId, visible);
+        if (visible && currentUserId != null && !seller) {
+            productInteractionService.recordBrowseHistory(currentUserId, productId);
+        }
+        return vo;
     }
 
     @Override
@@ -399,6 +406,8 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         boolean self = currentUserId != null && currentUserId.equals(product.getSellerId());
         vo.setCanOrder(visible && currentUserId != null && !self);
         vo.setCanChat(visible && currentUserId != null && !self);
+        vo.setFavorited(visible && currentUserId != null && !self
+                && productInteractionService.isFavorited(currentUserId, product.getId()));
         return vo;
     }
 

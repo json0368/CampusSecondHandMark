@@ -5,6 +5,7 @@ import com.cshm.campussecondhandmark.common.result.PageResult;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.MyProductVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductDetailVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductSummaryVO;
+import com.cshm.campussecondhandmark.module.product.service.ProductInteractionService;
 import com.cshm.campussecondhandmark.module.product.service.ProductService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -38,12 +40,16 @@ class ProductControllerTest {
     @Mock
     private ProductService productService;
 
+    @Mock
+    private ProductInteractionService productInteractionService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         ProductController productController = new ProductController();
         ReflectionTestUtils.setField(productController, "productService", productService);
+        ReflectionTestUtils.setField(productController, "productInteractionService", productInteractionService);
         mockMvc = MockMvcBuilders.standaloneSetup(productController)
                 .setValidator(noopValidator())
                 .build();
@@ -143,6 +149,43 @@ class ProductControllerTest {
 
         verify(productService).updateProduct(eq(2L), eq(10L), any());
         verify(productService).offShelfProduct(eq(2L), eq(10L));
+    }
+
+    @Test
+    void productInteractionEndpointsShouldUseApiProductsPaths() throws Exception {
+        BaseContext.setCurrentId(3L);
+        ProductSummaryVO summaryVO = new ProductSummaryVO();
+        summaryVO.setId(10L);
+        summaryVO.setTitle("高等数学教材");
+
+        when(productInteractionService.pageMyFavorites(eq(3L), any())).thenReturn(new PageResult<>(1, List.of(summaryVO)));
+        when(productInteractionService.pageMyBrowseHistory(eq(3L), any())).thenReturn(new PageResult<>(1, List.of(summaryVO)));
+
+        mockMvc.perform(post("/api/products/10/favorite"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1));
+
+        mockMvc.perform(delete("/api/products/10/favorite"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1));
+
+        mockMvc.perform(get("/api/products/favorites"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].id").value(10));
+
+        mockMvc.perform(get("/api/products/browse-history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].id").value(10));
+
+        mockMvc.perform(delete("/api/products/browse-history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1));
+
+        verify(productInteractionService).favoriteProduct(3L, 10L);
+        verify(productInteractionService).unfavoriteProduct(3L, 10L);
+        verify(productInteractionService).pageMyFavorites(eq(3L), any());
+        verify(productInteractionService).pageMyBrowseHistory(eq(3L), any());
+        verify(productInteractionService).clearMyBrowseHistory(3L);
     }
 
     private Validator noopValidator() {
