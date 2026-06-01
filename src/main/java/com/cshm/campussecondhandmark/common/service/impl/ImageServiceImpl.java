@@ -1,10 +1,7 @@
-package com.cshm.campussecondhandmark.module.product.service.impl;
+package com.cshm.campussecondhandmark.common.service.impl;
 
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cshm.campussecondhandmark.common.exception.BaseException;
-import com.cshm.campussecondhandmark.module.product.mapper.ProductImageMapper;
-import com.cshm.campussecondhandmark.module.product.pojo.entity.ProductImage;
-import com.cshm.campussecondhandmark.module.product.service.ProductImageService;
+import com.cshm.campussecondhandmark.common.service.ImageService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -14,7 +11,7 @@ import java.io.IOException;
 import java.util.UUID;
 
 @Service
-public class ProductImageServiceImpl extends ServiceImpl<ProductImageMapper, ProductImage> implements ProductImageService {
+public class ImageServiceImpl implements ImageService {
 
     @Value("${cshm.upload.path:${user.dir}/upload/}")
     private String uploadBasePath;

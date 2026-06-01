@@ -3,6 +3,7 @@ package com.cshm.campussecondhandmark.module.product.controller;
 import com.cshm.campussecondhandmark.common.context.BaseContext;
 import com.cshm.campussecondhandmark.common.result.PageResult;
 import com.cshm.campussecondhandmark.common.result.Result;
+import com.cshm.campussecondhandmark.common.service.ImageService;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductCreateDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductQueryDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductSearchDTO;
@@ -19,6 +20,7 @@ import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/products")
@@ -31,6 +33,9 @@ public class ProductController {
 
     @Autowired
     private ProductInteractionService productInteractionService;
+
+    @Autowired
+    private ImageService imageService;
 
     @PostMapping("")
     @ApiOperation(value = "发布商品", notes = "发布后进入待审核状态")
@@ -139,5 +144,11 @@ public class ProductController {
         log.info("清空我的浏览历史，用户ID={}", currentUserId);
         productInteractionService.clearMyBrowseHistory(currentUserId);
         return Result.success();
+    }
+
+    @PostMapping("/images/upload")
+    @ApiOperation("上传商品图片，返回图片URL")
+    public Result uploadFile(@RequestParam MultipartFile file) {
+        return Result.success(imageService.uploadFile(file));
     }
 }
