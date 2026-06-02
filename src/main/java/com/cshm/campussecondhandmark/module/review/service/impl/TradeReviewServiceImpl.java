@@ -18,6 +18,7 @@ import com.cshm.campussecondhandmark.module.review.pojo.vo.ReviewVO;
 import com.cshm.campussecondhandmark.module.review.service.TradeReviewService;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import com.cshm.campussecondhandmark.module.user.service.support.UserAccessValidator;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -44,12 +45,15 @@ public class TradeReviewServiceImpl extends ServiceImpl<TradeReviewMapper, Trade
     private UserMapper userMapper;
     @Autowired
     private ProductMapper productMapper;
+    @Autowired
+    private UserAccessValidator userAccessValidator;
 
     // ==================== 公开接口 ====================
 
     @Override
     @Transactional
     public void createReview(Long currentUserId, ReviewCreateDTO dto) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         TradeOrder order = getOrderOrThrow(dto.getOrderId());
         assertOrderParticipant(currentUserId, order);
         if (order.getStatus() != TradeOrderStatusEnum.COMPLETED) {
@@ -95,6 +99,7 @@ public class TradeReviewServiceImpl extends ServiceImpl<TradeReviewMapper, Trade
 
     @Override
     public void assertReviewAllowed(Long currentUserId, Long orderId) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         TradeOrder order = getOrderOrThrow(orderId);
         assertOrderParticipant(currentUserId, order);
         if (order.getStatus() != TradeOrderStatusEnum.COMPLETED) {

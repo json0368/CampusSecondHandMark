@@ -13,14 +13,19 @@ import com.cshm.campussecondhandmark.module.review.pojo.dto.ReviewCreateDTO;
 import com.cshm.campussecondhandmark.module.review.pojo.dto.ReviewQueryDTO;
 import com.cshm.campussecondhandmark.module.review.pojo.entity.TradeReview;
 import com.cshm.campussecondhandmark.module.review.pojo.vo.ReviewVO;
+import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
+import com.cshm.campussecondhandmark.module.user.enums.UserStatusEnum;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import com.cshm.campussecondhandmark.module.user.service.support.UserAccessValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
@@ -36,6 +41,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class TradeReviewServiceImplTest {
 
     @Mock
@@ -54,11 +60,20 @@ class TradeReviewServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        UserAccessValidator userAccessValidator = new UserAccessValidator();
+        ReflectionTestUtils.setField(userAccessValidator, "userMapper", userMapper);
         tradeReviewService = new TradeReviewServiceImpl();
         ReflectionTestUtils.setField(tradeReviewService, "baseMapper", tradeReviewMapper);
         ReflectionTestUtils.setField(tradeReviewService, "tradeOrderMapper", tradeOrderMapper);
         ReflectionTestUtils.setField(tradeReviewService, "userMapper", userMapper);
         ReflectionTestUtils.setField(tradeReviewService, "productMapper", productMapper);
+        ReflectionTestUtils.setField(tradeReviewService, "userAccessValidator", userAccessValidator);
+    }
+
+    private User bannedUser(Long id, String nickname) {
+        User user = user(id, nickname);
+        user.setStatus(UserStatusEnum.BANNED);
+        return user;
     }
 
     @Test
@@ -68,6 +83,7 @@ class TradeReviewServiceImplTest {
         dto.setScore(5);
         dto.setContent("smooth trade");
 
+        when(userMapper.selectById(10L)).thenReturn(user(10L, "buyer"));
         when(tradeOrderMapper.selectById(1L)).thenReturn(completedOrder());
         when(tradeReviewMapper.selectCount(any())).thenReturn(0L);
         doAnswer(invocation -> {
@@ -92,11 +108,29 @@ class TradeReviewServiceImplTest {
     }
 
     @Test
+    void createReviewShouldRejectBannedReviewer() {
+        ReviewCreateDTO dto = new ReviewCreateDTO();
+        dto.setOrderId(1L);
+        dto.setScore(5);
+
+        when(userMapper.selectById(10L)).thenReturn(bannedUser(10L, "buyer"));
+        when(tradeOrderMapper.selectById(1L)).thenReturn(completedOrder());
+        when(tradeReviewMapper.selectCount(any())).thenReturn(0L);
+        when(tradeReviewMapper.insert(any(TradeReview.class))).thenReturn(1);
+
+        BaseException exception = assertThrows(BaseException.class, () -> tradeReviewService.createReview(10L, dto));
+
+        assertEquals("账号已被封禁", exception.getMessage());
+        verify(tradeReviewMapper, never()).insert(any(TradeReview.class));
+    }
+
+    @Test
     void createReviewShouldRejectNonCompletedOrder() {
         ReviewCreateDTO dto = new ReviewCreateDTO();
         dto.setOrderId(1L);
         dto.setScore(5);
 
+        when(userMapper.selectById(10L)).thenReturn(user(10L, "buyer"));
         TradeOrder order = completedOrder();
         order.setStatus(TradeOrderStatusEnum.IN_TRANSACTION);
         when(tradeOrderMapper.selectById(1L)).thenReturn(order);
@@ -113,6 +147,7 @@ class TradeReviewServiceImplTest {
         dto.setOrderId(1L);
         dto.setScore(4);
 
+        when(userMapper.selectById(10L)).thenReturn(user(10L, "buyer"));
         when(tradeOrderMapper.selectById(1L)).thenReturn(completedOrder());
         when(tradeReviewMapper.selectCount(any())).thenReturn(1L);
 
@@ -120,6 +155,17 @@ class TradeReviewServiceImplTest {
 
         assertEquals("该订单已评价", exception.getMessage());
         verify(tradeReviewMapper, never()).insert(any(TradeReview.class));
+    }
+
+    @Test
+    void assertReviewAllowedShouldRejectBannedReviewer() {
+        when(userMapper.selectById(10L)).thenReturn(bannedUser(10L, "buyer"));
+        when(tradeOrderMapper.selectById(1L)).thenReturn(completedOrder());
+        when(tradeReviewMapper.selectCount(any())).thenReturn(0L);
+
+        BaseException exception = assertThrows(BaseException.class, () -> tradeReviewService.assertReviewAllowed(10L, 1L));
+
+        assertEquals("账号已被封禁", exception.getMessage());
     }
 
     @Test
@@ -243,6 +289,8 @@ class TradeReviewServiceImplTest {
     private User user(Long id, String nickname) {
         User user = new User();
         user.setId(id);
+        user.setRole(UserRoleEnum.USER);
+        user.setStatus(UserStatusEnum.NORMAL);
         user.setNickname(nickname);
         return user;
     }

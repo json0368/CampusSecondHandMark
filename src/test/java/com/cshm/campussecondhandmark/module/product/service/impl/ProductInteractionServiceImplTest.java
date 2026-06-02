@@ -18,14 +18,19 @@ import com.cshm.campussecondhandmark.module.product.pojo.entity.ProductCategory;
 import com.cshm.campussecondhandmark.module.product.pojo.entity.ProductFavorite;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductSummaryVO;
 import com.cshm.campussecondhandmark.module.user.enums.CampusVerifyStatusEnum;
+import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
+import com.cshm.campussecondhandmark.module.user.enums.UserStatusEnum;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import com.cshm.campussecondhandmark.module.user.service.support.UserAccessValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -42,6 +47,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class ProductInteractionServiceImplTest {
 
     @Mock
@@ -63,16 +69,35 @@ class ProductInteractionServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        UserAccessValidator userAccessValidator = new UserAccessValidator();
+        ReflectionTestUtils.setField(userAccessValidator, "userMapper", userMapper);
         productInteractionService = new ProductInteractionServiceImpl();
         ReflectionTestUtils.setField(productInteractionService, "productFavoriteMapper", productFavoriteMapper);
         ReflectionTestUtils.setField(productInteractionService, "productBrowseHistoryMapper", productBrowseHistoryMapper);
         ReflectionTestUtils.setField(productInteractionService, "productMapper", productMapper);
         ReflectionTestUtils.setField(productInteractionService, "productCategoryMapper", productCategoryMapper);
         ReflectionTestUtils.setField(productInteractionService, "userMapper", userMapper);
+        ReflectionTestUtils.setField(productInteractionService, "userAccessValidator", userAccessValidator);
+    }
+
+    private User normalUser(Long userId, String nickname) {
+        User user = new User();
+        user.setId(userId);
+        user.setRole(UserRoleEnum.USER);
+        user.setStatus(UserStatusEnum.NORMAL);
+        user.setNickname(nickname);
+        return user;
+    }
+
+    private User bannedUser(Long userId, String nickname) {
+        User user = normalUser(userId, nickname);
+        user.setStatus(UserStatusEnum.BANNED);
+        return user;
     }
 
     @Test
     void favoriteProductShouldInsertFavoriteRecord() {
+        when(userMapper.selectById(3L)).thenReturn(normalUser(3L, "李四"));
         when(productMapper.selectById(10L)).thenReturn(approvedOnShelfProduct());
         when(productFavoriteMapper.selectCount(any())).thenReturn(0L);
         when(productFavoriteMapper.insert(any(ProductFavorite.class))).thenReturn(1);
@@ -89,7 +114,22 @@ class ProductInteractionServiceImplTest {
     }
 
     @Test
+    void favoriteProductShouldRejectBannedUser() {
+        when(userMapper.selectById(3L)).thenReturn(bannedUser(3L, "李四"));
+        when(productMapper.selectById(10L)).thenReturn(approvedOnShelfProduct());
+        when(productFavoriteMapper.selectCount(any())).thenReturn(0L);
+        when(productFavoriteMapper.insert(any(ProductFavorite.class))).thenReturn(1);
+
+        BaseException exception = assertThrows(BaseException.class,
+                () -> productInteractionService.favoriteProduct(3L, 10L));
+
+        assertEquals("账号已被封禁", exception.getMessage());
+        verify(productFavoriteMapper, never()).insert(any(ProductFavorite.class));
+    }
+
+    @Test
     void favoriteProductShouldBeIdempotentWhenAlreadyFavorited() {
+        when(userMapper.selectById(3L)).thenReturn(normalUser(3L, "李四"));
         when(productMapper.selectById(10L)).thenReturn(approvedOnShelfProduct());
         when(productFavoriteMapper.selectCount(any())).thenReturn(1L);
 
@@ -100,6 +140,7 @@ class ProductInteractionServiceImplTest {
 
     @Test
     void favoriteProductShouldRejectSelfProduct() {
+        when(userMapper.selectById(2L)).thenReturn(normalUser(2L, "张三"));
         when(productMapper.selectById(10L)).thenReturn(approvedOnShelfProduct());
 
         BaseException exception = assertThrows(BaseException.class,
@@ -111,6 +152,8 @@ class ProductInteractionServiceImplTest {
 
     @Test
     void unfavoriteProductShouldDeleteFavoriteRecordIdempotently() {
+        when(userMapper.selectById(3L)).thenReturn(normalUser(3L, "李四"));
+
         productInteractionService.unfavoriteProduct(3L, 10L);
 
         verify(productFavoriteMapper).delete(any());
@@ -118,6 +161,7 @@ class ProductInteractionServiceImplTest {
 
     @Test
     void recordBrowseHistoryShouldInsertWhenNoHistoryExists() {
+        when(userMapper.selectById(3L)).thenReturn(normalUser(3L, "李四"));
         when(productMapper.selectById(10L)).thenReturn(approvedOnShelfProduct());
         when(productBrowseHistoryMapper.selectOne(any())).thenReturn(null);
         when(productBrowseHistoryMapper.insert(any(ProductBrowseHistory.class))).thenReturn(1);
@@ -140,6 +184,7 @@ class ProductInteractionServiceImplTest {
         history.setProductId(10L);
         history.setBrowseTime(LocalDateTime.now().minusDays(1));
 
+        when(userMapper.selectById(3L)).thenReturn(normalUser(3L, "李四"));
         when(productMapper.selectById(10L)).thenReturn(approvedOnShelfProduct());
         when(productBrowseHistoryMapper.selectOne(any())).thenReturn(history);
         when(productBrowseHistoryMapper.updateById(any(ProductBrowseHistory.class))).thenReturn(1);
@@ -152,6 +197,7 @@ class ProductInteractionServiceImplTest {
 
     @Test
     void recordBrowseHistoryShouldIgnoreSelfProduct() {
+        when(userMapper.selectById(2L)).thenReturn(normalUser(2L, "张三"));
         when(productMapper.selectById(10L)).thenReturn(approvedOnShelfProduct());
 
         productInteractionService.recordBrowseHistory(2L, 10L);
@@ -166,11 +212,8 @@ class ProductInteractionServiceImplTest {
         favorite.setUserId(3L);
         favorite.setProductId(10L);
 
-        Page<ProductFavorite> page = new Page<>(1, 10);
-        page.setTotal(1);
-        page.setRecords(List.of(favorite));
-
-        when(productFavoriteMapper.selectPage(any(Page.class), any())).thenReturn(page);
+        when(userMapper.selectById(3L)).thenReturn(normalUser(3L, "李四"));
+        when(productFavoriteMapper.selectList(any())).thenReturn(List.of(favorite));
         when(productMapper.selectBatchIds(any())).thenReturn(List.of(approvedOnShelfProduct()));
         when(productCategoryMapper.selectBatchIds(any())).thenReturn(List.of(enabledCategory()));
         when(userMapper.selectBatchIds(any())).thenReturn(List.of(seller()));
@@ -184,7 +227,64 @@ class ProductInteractionServiceImplTest {
     }
 
     @Test
+    void pageMyFavoritesShouldExcludeInvisibleProductsFromTotal() {
+        ProductFavorite visibleFavorite = new ProductFavorite();
+        visibleFavorite.setUserId(3L);
+        visibleFavorite.setProductId(10L);
+        ProductFavorite hiddenFavorite = new ProductFavorite();
+        hiddenFavorite.setUserId(3L);
+        hiddenFavorite.setProductId(11L);
+
+        Page<ProductFavorite> page = new Page<>(1, 10);
+        page.setTotal(2);
+        page.setRecords(List.of(visibleFavorite, hiddenFavorite));
+
+        when(userMapper.selectById(3L)).thenReturn(normalUser(3L, "李四"));
+        when(productFavoriteMapper.selectPage(any(Page.class), any())).thenReturn(page);
+        when(productFavoriteMapper.selectList(any())).thenReturn(List.of(visibleFavorite, hiddenFavorite));
+        when(productMapper.selectBatchIds(any())).thenReturn(List.of(approvedOnShelfProduct(), offShelfProduct()));
+        when(productCategoryMapper.selectBatchIds(any())).thenReturn(List.of(enabledCategory()));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(seller()));
+
+        PageResult<ProductSummaryVO> result = productInteractionService.pageMyFavorites(3L, new ProductQueryDTO());
+
+        assertEquals(1, result.getTotal());
+        assertEquals(1, result.getRecords().size());
+        assertEquals(10L, result.getRecords().get(0).getId());
+    }
+
+    @Test
+    void pageMyBrowseHistoryShouldExcludeInvisibleProductsFromTotal() {
+        ProductBrowseHistory visibleHistory = new ProductBrowseHistory();
+        visibleHistory.setUserId(3L);
+        visibleHistory.setProductId(10L);
+        visibleHistory.setBrowseTime(LocalDateTime.now());
+        ProductBrowseHistory hiddenHistory = new ProductBrowseHistory();
+        hiddenHistory.setUserId(3L);
+        hiddenHistory.setProductId(11L);
+        hiddenHistory.setBrowseTime(LocalDateTime.now().minusMinutes(1));
+
+        Page<ProductBrowseHistory> page = new Page<>(1, 10);
+        page.setTotal(2);
+        page.setRecords(List.of(visibleHistory, hiddenHistory));
+
+        when(userMapper.selectById(3L)).thenReturn(normalUser(3L, "李四"));
+        when(productBrowseHistoryMapper.selectPage(any(Page.class), any())).thenReturn(page);
+        when(productBrowseHistoryMapper.selectList(any())).thenReturn(List.of(visibleHistory, hiddenHistory));
+        when(productMapper.selectBatchIds(any())).thenReturn(List.of(approvedOnShelfProduct(), offShelfProduct()));
+        when(productCategoryMapper.selectBatchIds(any())).thenReturn(List.of(enabledCategory()));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(seller()));
+
+        PageResult<ProductSummaryVO> result = productInteractionService.pageMyBrowseHistory(3L, new ProductQueryDTO());
+
+        assertEquals(1, result.getTotal());
+        assertEquals(1, result.getRecords().size());
+        assertEquals(10L, result.getRecords().get(0).getId());
+    }
+
+    @Test
     void clearMyBrowseHistoryShouldDeleteCurrentUserHistory() {
+        when(userMapper.selectById(3L)).thenReturn(normalUser(3L, "李四"));
         productInteractionService.clearMyBrowseHistory(3L);
 
         verify(productBrowseHistoryMapper).delete(any());
@@ -192,6 +292,7 @@ class ProductInteractionServiceImplTest {
 
     @Test
     void isFavoritedShouldReturnTrueWhenFavoriteExists() {
+        when(userMapper.selectById(3L)).thenReturn(normalUser(3L, "李四"));
         when(productFavoriteMapper.selectCount(any())).thenReturn(1L);
 
         assertTrue(productInteractionService.isFavorited(3L, 10L));
@@ -212,6 +313,13 @@ class ProductInteractionServiceImplTest {
         product.setPublishTime(LocalDateTime.now());
         product.setCreateTime(LocalDateTime.now());
         product.setUpdateTime(LocalDateTime.now());
+        return product;
+    }
+
+    private Product offShelfProduct() {
+        Product product = approvedOnShelfProduct();
+        product.setId(11L);
+        product.setSaleStatus(ProductSaleStatusEnum.OFF_SHELF);
         return product;
     }
 

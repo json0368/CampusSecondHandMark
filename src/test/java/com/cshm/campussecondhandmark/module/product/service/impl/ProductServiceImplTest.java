@@ -6,30 +6,41 @@ import com.cshm.campussecondhandmark.common.result.PageResult;
 import com.cshm.campussecondhandmark.module.product.enums.CategoryStatusEnum;
 import com.cshm.campussecondhandmark.module.product.enums.ProductAuditStatusEnum;
 import com.cshm.campussecondhandmark.module.product.enums.ProductSaleStatusEnum;
+import com.cshm.campussecondhandmark.module.product.mapper.ProductBrowseHistoryMapper;
 import com.cshm.campussecondhandmark.module.product.mapper.ProductCategoryMapper;
+import com.cshm.campussecondhandmark.module.product.mapper.ProductFavoriteMapper;
 import com.cshm.campussecondhandmark.module.product.mapper.ProductImageMapper;
 import com.cshm.campussecondhandmark.module.product.mapper.ProductMapper;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.AdminProductRemoveDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductAuditDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductAuditQueryDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductCreateDTO;
+import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductQueryDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductSearchDTO;
+import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductUpdateDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.entity.Product;
+import com.cshm.campussecondhandmark.module.product.pojo.entity.ProductBrowseHistory;
 import com.cshm.campussecondhandmark.module.product.pojo.entity.ProductCategory;
+import com.cshm.campussecondhandmark.module.product.pojo.entity.ProductFavorite;
 import com.cshm.campussecondhandmark.module.product.pojo.entity.ProductImage;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductAuditVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductDetailVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductSummaryVO;
 import com.cshm.campussecondhandmark.module.product.service.ProductInteractionService;
 import com.cshm.campussecondhandmark.module.user.enums.CampusVerifyStatusEnum;
+import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
+import com.cshm.campussecondhandmark.module.user.enums.UserStatusEnum;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import com.cshm.campussecondhandmark.module.user.service.support.UserAccessValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -44,10 +55,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class ProductServiceImplTest {
 
     @Mock
@@ -55,6 +68,12 @@ class ProductServiceImplTest {
 
     @Mock
     private ProductImageMapper productImageMapper;
+
+    @Mock
+    private ProductFavoriteMapper productFavoriteMapper;
+
+    @Mock
+    private ProductBrowseHistoryMapper productBrowseHistoryMapper;
 
     @Mock
     private ProductCategoryMapper productCategoryMapper;
@@ -69,12 +88,30 @@ class ProductServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        UserAccessValidator userAccessValidator = new UserAccessValidator();
+        ReflectionTestUtils.setField(userAccessValidator, "userMapper", userMapper);
         productService = new ProductServiceImpl();
         ReflectionTestUtils.setField(productService, "baseMapper", productMapper);
         ReflectionTestUtils.setField(productService, "productImageMapper", productImageMapper);
         ReflectionTestUtils.setField(productService, "productCategoryMapper", productCategoryMapper);
         ReflectionTestUtils.setField(productService, "userMapper", userMapper);
         ReflectionTestUtils.setField(productService, "productInteractionService", productInteractionService);
+        ReflectionTestUtils.setField(productService, "userAccessValidator", userAccessValidator);
+    }
+
+    private User normalUser(Long userId, String nickname) {
+        User user = new User();
+        user.setId(userId);
+        user.setRole(UserRoleEnum.USER);
+        user.setStatus(UserStatusEnum.NORMAL);
+        user.setNickname(nickname);
+        return user;
+    }
+
+    private User bannedUser(Long userId, String nickname) {
+        User user = normalUser(userId, nickname);
+        user.setStatus(UserStatusEnum.BANNED);
+        return user;
     }
 
     @Test
@@ -87,6 +124,7 @@ class ProductServiceImplTest {
         dto.setConditionLevel(1);
         dto.setImageUrls(List.of("https://example.com/1.jpg", "https://example.com/2.jpg"));
 
+        when(userMapper.selectById(2L)).thenReturn(normalUser(2L, "张三"));
         when(productCategoryMapper.selectById(1L)).thenReturn(enabledCategory());
         doAnswer(invocation -> {
             Product product = invocation.getArgument(0);
@@ -121,6 +159,90 @@ class ProductServiceImplTest {
         assertEquals(1, images.get(0).getSortOrder());
         assertEquals("https://example.com/2.jpg", images.get(1).getImageUrl());
         assertEquals(2, images.get(1).getSortOrder());
+    }
+
+    @Test
+    void createProductShouldRejectBannedSeller() {
+        ProductCreateDTO dto = new ProductCreateDTO();
+        dto.setCategoryId(1L);
+        dto.setTitle("高等数学教材");
+        dto.setPrice(new BigDecimal("25.00"));
+        dto.setConditionLevel(1);
+        dto.setImageUrls(List.of("https://example.com/1.jpg"));
+
+        when(userMapper.selectById(2L)).thenReturn(bannedUser(2L, "张三"));
+        when(productCategoryMapper.selectById(1L)).thenReturn(enabledCategory());
+
+        BaseException exception = assertThrows(BaseException.class, () -> productService.createProduct(2L, dto));
+
+        assertEquals("账号已被封禁", exception.getMessage());
+        verify(productMapper, never()).insert(any(Product.class));
+    }
+
+    @Test
+    void createProductShouldRejectEmptyImages() {
+        ProductCreateDTO dto = new ProductCreateDTO();
+        dto.setCategoryId(1L);
+        dto.setTitle("高等数学教材");
+        dto.setPrice(new BigDecimal("25.00"));
+        dto.setConditionLevel(1);
+        dto.setImageUrls(List.of());
+
+        when(userMapper.selectById(2L)).thenReturn(normalUser(2L, "张三"));
+        when(productCategoryMapper.selectById(1L)).thenReturn(enabledCategory());
+
+        BaseException exception = assertThrows(BaseException.class, () -> productService.createProduct(2L, dto));
+
+        assertEquals("商品图片不能为空", exception.getMessage());
+        verify(productMapper, never()).insert(any(Product.class));
+    }
+
+    @Test
+    void createProductShouldRejectUnknownConditionLevel() {
+        ProductCreateDTO dto = new ProductCreateDTO();
+        dto.setCategoryId(1L);
+        dto.setTitle("高等数学教材");
+        dto.setPrice(new BigDecimal("25.00"));
+        dto.setConditionLevel(0);
+        dto.setImageUrls(List.of("https://example.com/1.jpg"));
+
+        when(userMapper.selectById(2L)).thenReturn(normalUser(2L, "张三"));
+        when(productCategoryMapper.selectById(1L)).thenReturn(enabledCategory());
+
+        BaseException exception = assertThrows(BaseException.class, () -> productService.createProduct(2L, dto));
+
+        assertEquals("商品成色不正确", exception.getMessage());
+        verify(productMapper, never()).insert(any(Product.class));
+    }
+
+    @Test
+    void updateProductShouldRejectBlankTitle() {
+        ProductUpdateDTO dto = new ProductUpdateDTO();
+        dto.setTitle("   ");
+
+        when(userMapper.selectById(2L)).thenReturn(normalUser(2L, "张三"));
+        when(productMapper.selectById(10L)).thenReturn(approvedOnShelfProduct());
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+
+        BaseException exception = assertThrows(BaseException.class, () -> productService.updateProduct(2L, 10L, dto));
+
+        assertEquals("商品标题不能为空", exception.getMessage());
+        verify(productMapper, never()).updateById(any(Product.class));
+    }
+
+    @Test
+    void pageMyProductsShouldRejectBannedSeller() {
+        Page<Product> page = new Page<>(1, 10);
+        page.setTotal(0);
+        page.setRecords(List.of());
+
+        when(userMapper.selectById(2L)).thenReturn(bannedUser(2L, "张三"));
+        when(productMapper.selectPage(any(Page.class), any())).thenReturn(page);
+
+        BaseException exception = assertThrows(BaseException.class,
+                () -> productService.pageMyProducts(2L, new ProductQueryDTO()));
+
+        assertEquals("账号已被封禁", exception.getMessage());
     }
 
     @Test
@@ -200,6 +322,41 @@ class ProductServiceImplTest {
     }
 
     @Test
+    void getProductDetailShouldReuseLoadedProductWhenRecordingBrowseHistory() {
+        UserAccessValidator userAccessValidator = new UserAccessValidator();
+        ReflectionTestUtils.setField(userAccessValidator, "userMapper", userMapper);
+        ProductInteractionServiceImpl realProductInteractionService = new ProductInteractionServiceImpl();
+        ReflectionTestUtils.setField(realProductInteractionService, "productFavoriteMapper", productFavoriteMapper);
+        ReflectionTestUtils.setField(realProductInteractionService, "productBrowseHistoryMapper", productBrowseHistoryMapper);
+        ReflectionTestUtils.setField(realProductInteractionService, "productMapper", productMapper);
+        ReflectionTestUtils.setField(realProductInteractionService, "productCategoryMapper", productCategoryMapper);
+        ReflectionTestUtils.setField(realProductInteractionService, "userMapper", userMapper);
+        ReflectionTestUtils.setField(realProductInteractionService, "userAccessValidator", userAccessValidator);
+
+        ProductServiceImpl serviceWithRealInteraction = new ProductServiceImpl();
+        ReflectionTestUtils.setField(serviceWithRealInteraction, "baseMapper", productMapper);
+        ReflectionTestUtils.setField(serviceWithRealInteraction, "productImageMapper", productImageMapper);
+        ReflectionTestUtils.setField(serviceWithRealInteraction, "productCategoryMapper", productCategoryMapper);
+        ReflectionTestUtils.setField(serviceWithRealInteraction, "userMapper", userMapper);
+        ReflectionTestUtils.setField(serviceWithRealInteraction, "productInteractionService", realProductInteractionService);
+        ReflectionTestUtils.setField(serviceWithRealInteraction, "userAccessValidator", userAccessValidator);
+
+        when(productMapper.selectById(10L)).thenReturn(approvedOnShelfProduct());
+        when(productCategoryMapper.selectById(1L)).thenReturn(enabledCategory());
+        when(userMapper.selectById(2L)).thenReturn(seller());
+        when(userMapper.selectById(3L)).thenReturn(normalUser(3L, "李四"));
+        when(productImageMapper.selectList(any())).thenReturn(List.of(productImage()));
+        when(productFavoriteMapper.selectCount(any())).thenReturn(0L);
+        when(productBrowseHistoryMapper.selectOne(any())).thenReturn(null);
+        when(productBrowseHistoryMapper.insert(any(ProductBrowseHistory.class))).thenReturn(1);
+
+        ProductDetailVO detail = serviceWithRealInteraction.getProductDetail(10L, 3L);
+
+        assertEquals(10L, detail.getId());
+        verify(productMapper, times(1)).selectById(10L);
+    }
+
+    @Test
     void getProductDetailShouldMarkFavoriteAndRecordBrowseHistoryForOtherUser() {
         Product product = approvedOnShelfProduct();
 
@@ -212,7 +369,7 @@ class ProductServiceImplTest {
         ProductDetailVO detail = productService.getProductDetail(10L, 3L);
 
         assertTrue(detail.getFavorited());
-        verify(productInteractionService).recordBrowseHistory(3L, 10L);
+        verify(productInteractionService).recordBrowseHistory(org.mockito.ArgumentMatchers.eq(3L), any(Product.class));
     }
 
     @Test
@@ -227,7 +384,7 @@ class ProductServiceImplTest {
         ProductDetailVO detail = productService.getProductDetail(10L, 2L);
 
         assertFalse(detail.getFavorited());
-        verify(productInteractionService, never()).recordBrowseHistory(2L, 10L);
+        verify(productInteractionService, never()).recordBrowseHistory(org.mockito.ArgumentMatchers.eq(2L), any(Product.class));
     }
 
     @Test
@@ -259,6 +416,8 @@ class ProductServiceImplTest {
     @Test
     void offShelfProductShouldRequireSellerAndSetOffShelfStatus() {
         Product product = approvedOnShelfProduct();
+        when(userMapper.selectById(3L)).thenReturn(normalUser(3L, "李四"));
+        when(userMapper.selectById(2L)).thenReturn(normalUser(2L, "张三"));
         when(productMapper.selectById(10L)).thenReturn(product);
         when(productMapper.updateById(any(Product.class))).thenReturn(1);
 

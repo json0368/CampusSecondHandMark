@@ -22,6 +22,7 @@ import com.cshm.campussecondhandmark.module.review.pojo.entity.TradeReview;
 import com.cshm.campussecondhandmark.module.user.enums.UserStatusEnum;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import com.cshm.campussecondhandmark.module.user.service.support.UserAccessValidator;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -52,13 +53,15 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
     private UserMapper userMapper;
     @Autowired
     private TradeReviewMapper tradeReviewMapper;
+    @Autowired
+    private UserAccessValidator userAccessValidator;
 
     // ==================== 公开接口 ====================
 
     @Override
     @Transactional
     public Long createOrder(Long currentUserId, Long productId) {
-        User buyer = getUserOrThrow(currentUserId);
+        User buyer = userAccessValidator.getNormalUserOrThrow(currentUserId, "买家必须是普通用户", "买家账号已被封禁");
         assertUserAvailable(buyer, "买家");
 
         Product product = getProductOrThrow(productId);
@@ -67,7 +70,7 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
         }
         assertProductOrderable(product);
 
-        User seller = getUserOrThrow(product.getSellerId());
+        User seller = userAccessValidator.getNormalUserOrThrow(product.getSellerId(), "卖家必须是普通用户", "卖家账号已被封禁");
         assertUserAvailable(seller, "卖家");
         assertNoActiveOrder(product.getId());
 
@@ -95,6 +98,7 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
 
     @Override
     public PageResult<OrderSummaryVO> pageMyOrders(Long currentUserId, OrderQueryDTO dto) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         int pageNum = (dto.getPageNum() != null && dto.getPageNum() > 0) ? dto.getPageNum() : 1;
         int pageSize = (dto.getPageSize() != null && dto.getPageSize() > 0) ? Math.min(dto.getPageSize(), MAX_PAGE_SIZE) : 10;
         Page<TradeOrder> page = new Page<>(pageNum, pageSize);
@@ -127,6 +131,7 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
 
     @Override
     public OrderDetailVO getOrderDetail(Long currentUserId, Long orderId) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         TradeOrder order = getOrderOrThrow(orderId);
         assertOrderParticipant(currentUserId, order);
         return buildOrderDetailVO(currentUserId, order);
@@ -135,6 +140,7 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
     @Override
     @Transactional
     public void confirmOrder(Long currentUserId, Long orderId) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         TradeOrder order = getOrderOrThrow(orderId);
         if (!currentUserId.equals(order.getSellerId())) {
             throw new BaseException("只有卖家可以确认订单");
@@ -155,6 +161,7 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
     @Override
     @Transactional
     public void cancelOrder(Long currentUserId, Long orderId, String remark) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         TradeOrder order = getOrderOrThrow(orderId);
         assertOrderParticipant(currentUserId, order);
         if (order.getStatus() != TradeOrderStatusEnum.PENDING_CONFIRM
@@ -186,6 +193,7 @@ public class TradeOrderServiceImpl extends ServiceImpl<TradeOrderMapper, TradeOr
     @Override
     @Transactional
     public void completeOrder(Long currentUserId, Long orderId) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         TradeOrder order = getOrderOrThrow(orderId);
         if (!currentUserId.equals(order.getBuyerId())) {
             throw new BaseException("只有买家可以完成订单");

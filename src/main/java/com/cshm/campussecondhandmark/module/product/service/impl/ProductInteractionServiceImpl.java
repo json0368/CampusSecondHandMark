@@ -1,7 +1,6 @@
 package com.cshm.campussecondhandmark.module.product.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cshm.campussecondhandmark.common.exception.BaseException;
 import com.cshm.campussecondhandmark.common.result.PageResult;
 import com.cshm.campussecondhandmark.module.product.enums.ProductAuditStatusEnum;
@@ -19,6 +18,7 @@ import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductSummaryVO;
 import com.cshm.campussecondhandmark.module.product.service.ProductInteractionService;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
+import com.cshm.campussecondhandmark.module.user.service.support.UserAccessValidator;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -26,7 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -56,9 +55,13 @@ public class ProductInteractionServiceImpl implements ProductInteractionService 
     @Autowired
     private UserMapper userMapper;
 
+    @Autowired
+    private UserAccessValidator userAccessValidator;
+
     @Override
     @Transactional
     public void favoriteProduct(Long currentUserId, Long productId) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         Product product = getProductOrThrow(productId);
         assertPublicVisible(product);
         if (currentUserId.equals(product.getSellerId())) {
@@ -82,6 +85,7 @@ public class ProductInteractionServiceImpl implements ProductInteractionService 
     @Override
     @Transactional
     public void unfavoriteProduct(Long currentUserId, Long productId) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         LambdaQueryWrapper<ProductFavorite> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(ProductFavorite::getUserId, currentUserId)
                 .eq(ProductFavorite::getProductId, productId);
@@ -90,39 +94,39 @@ public class ProductInteractionServiceImpl implements ProductInteractionService 
 
     @Override
     public PageResult<ProductSummaryVO> pageMyFavorites(Long currentUserId, ProductQueryDTO dto) {
-        Page<ProductFavorite> page = new Page<>(normalizePageNum(dto), normalizePageSize(dto));
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         LambdaQueryWrapper<ProductFavorite> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(ProductFavorite::getUserId, currentUserId)
                 .orderByDesc(ProductFavorite::getCreateTime)
                 .orderByDesc(ProductFavorite::getId);
-
-        Page<ProductFavorite> resultPage = productFavoriteMapper.selectPage(page, queryWrapper);
-        List<Long> productIds = resultPage.getRecords().stream()
-                .map(ProductFavorite::getProductId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-        List<ProductSummaryVO> records = buildProductSummaries(productIds);
-        return new PageResult<>(resultPage.getTotal(), records);
+        List<ProductFavorite> favorites = productFavoriteMapper.selectList(queryWrapper);
+        return pageVisibleProducts(favorites, ProductFavorite::getProductId, normalizePageNum(dto), normalizePageSize(dto));
     }
 
     @Override
     @Transactional
     public void recordBrowseHistory(Long currentUserId, Long productId) {
-        if (currentUserId == null || productId == null) {
+        if (productId == null) {
             return;
         }
         Product product = productMapper.selectById(productId);
-        if (product == null || !isPublicVisible(product) || currentUserId.equals(product.getSellerId())) {
+        recordBrowseHistory(currentUserId, product);
+    }
+
+    @Override
+    @Transactional
+    public void recordBrowseHistory(Long currentUserId, Product product) {
+        if (currentUserId == null || product == null || !isPublicVisible(product) || currentUserId.equals(product.getSellerId())) {
             return;
         }
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
 
         LocalDateTime now = LocalDateTime.now();
-        ProductBrowseHistory history = getBrowseHistory(currentUserId, productId);
+        ProductBrowseHistory history = getBrowseHistory(currentUserId, product.getId());
         if (history == null) {
             history = new ProductBrowseHistory();
             history.setUserId(currentUserId);
-            history.setProductId(productId);
+            history.setProductId(product.getId());
             history.setBrowseTime(now);
             history.setCreateTime(now);
             history.setUpdateTime(now);
@@ -141,25 +145,19 @@ public class ProductInteractionServiceImpl implements ProductInteractionService 
 
     @Override
     public PageResult<ProductSummaryVO> pageMyBrowseHistory(Long currentUserId, ProductQueryDTO dto) {
-        Page<ProductBrowseHistory> page = new Page<>(normalizePageNum(dto), normalizePageSize(dto));
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         LambdaQueryWrapper<ProductBrowseHistory> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(ProductBrowseHistory::getUserId, currentUserId)
                 .orderByDesc(ProductBrowseHistory::getBrowseTime)
                 .orderByDesc(ProductBrowseHistory::getId);
-
-        Page<ProductBrowseHistory> resultPage = productBrowseHistoryMapper.selectPage(page, queryWrapper);
-        List<Long> productIds = resultPage.getRecords().stream()
-                .map(ProductBrowseHistory::getProductId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-        List<ProductSummaryVO> records = buildProductSummaries(productIds);
-        return new PageResult<>(resultPage.getTotal(), records);
+        List<ProductBrowseHistory> histories = productBrowseHistoryMapper.selectList(queryWrapper);
+        return pageVisibleProducts(histories, ProductBrowseHistory::getProductId, normalizePageNum(dto), normalizePageSize(dto));
     }
 
     @Override
     @Transactional
     public void clearMyBrowseHistory(Long currentUserId) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         LambdaQueryWrapper<ProductBrowseHistory> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(ProductBrowseHistory::getUserId, currentUserId);
         productBrowseHistoryMapper.delete(queryWrapper);
@@ -202,21 +200,41 @@ public class ProductInteractionServiceImpl implements ProductInteractionService 
         return productBrowseHistoryMapper.selectOne(queryWrapper);
     }
 
-    private List<ProductSummaryVO> buildProductSummaries(List<Long> productIds) {
+    private <T> PageResult<ProductSummaryVO> pageVisibleProducts(List<T> interactions,
+                                                                 Function<T, Long> productIdExtractor,
+                                                                 int pageNum,
+                                                                 int pageSize) {
+        List<Long> orderedProductIds = extractIds(interactions, productIdExtractor);
+        Map<Long, Product> visibleProductsById = mapVisibleProductsById(orderedProductIds);
+        List<Long> visibleProductIds = orderedProductIds.stream()
+                .filter(visibleProductsById::containsKey)
+                .toList();
+
+        int fromIndex = Math.min((pageNum - 1) * pageSize, visibleProductIds.size());
+        int toIndex = Math.min(fromIndex + pageSize, visibleProductIds.size());
+        List<Long> pageProductIds = visibleProductIds.subList(fromIndex, toIndex);
+        return new PageResult<>((long) visibleProductIds.size(), buildProductSummaries(pageProductIds, visibleProductsById));
+    }
+
+    private Map<Long, Product> mapVisibleProductsById(List<Long> productIds) {
         if (productIds == null || productIds.isEmpty()) {
+            return Map.of();
+        }
+        return productMapper.selectBatchIds(productIds).stream()
+                .filter(Objects::nonNull)
+                .filter(this::isPublicVisible)
+                .collect(Collectors.toMap(Product::getId, Function.identity(), (l, r) -> l));
+    }
+
+    private List<ProductSummaryVO> buildProductSummaries(List<Long> productIds, Map<Long, Product> productsById) {
+        if (productIds == null || productIds.isEmpty() || productsById == null || productsById.isEmpty()) {
             return List.of();
         }
-
-        Map<Long, Product> productsById = productMapper.selectBatchIds(productIds).stream()
-                .filter(Objects::nonNull)
-                .collect(Collectors.toMap(Product::getId, Function.identity(), (l, r) -> l));
         Map<Long, ProductCategory> categoriesById = mapCategoriesById(extractIds(productsById.values(), Product::getCategoryId));
         Map<Long, User> usersById = mapUsersById(extractIds(productsById.values(), Product::getSellerId));
-
         return productIds.stream()
                 .map(productsById::get)
                 .filter(Objects::nonNull)
-                .sorted(Comparator.comparingInt(product -> productIds.indexOf(product.getId())))
                 .map(product -> buildProductSummaryVO(product, categoriesById, usersById))
                 .toList();
     }

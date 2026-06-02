@@ -1,6 +1,7 @@
 package com.cshm.campussecondhandmark.module.user.controller;
 
 import com.cshm.campussecondhandmark.common.context.BaseContext;
+import com.cshm.campussecondhandmark.common.service.ImageService;
 import com.cshm.campussecondhandmark.module.user.enums.CampusVerifyStatusEnum;
 import com.cshm.campussecondhandmark.module.user.enums.UserRoleEnum;
 import com.cshm.campussecondhandmark.module.user.pojo.vo.CurrentUserVO;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -26,6 +28,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -37,6 +40,9 @@ class UserControllerTest {
     @Mock
     private UserService userService;
 
+    @Mock
+    private ImageService imageService;
+
     private MockMvc mockMvc;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -45,6 +51,7 @@ class UserControllerTest {
     void setUp() {
         UserController userController = new UserController();
         ReflectionTestUtils.setField(userController, "userService", userService);
+        ReflectionTestUtils.setField(userController, "imageService", imageService);
         mockMvc = MockMvcBuilders.standaloneSetup(userController)
                 .setValidator(new Validator() {
                     @Override
@@ -163,6 +170,25 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.code").value(1));
 
         verify(userService).updateProfile(eq(3L), any());
+    }
+
+    @Test
+    void uploadAvatarShouldSupportApiUserAvatarUploadPath() throws Exception {
+        BaseContext.setCurrentId(3L);
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "avatar.png",
+                MediaType.IMAGE_PNG_VALUE,
+                "avatar-bytes".getBytes());
+
+        when(imageService.uploadFile(any())).thenReturn("http://localhost:8086/upload/avatar.png");
+
+        mockMvc.perform(multipart("/api/user/avatar/upload").file(file))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1))
+                .andExpect(jsonPath("$.data").value("http://localhost:8086/upload/avatar.png"));
+
+        verify(imageService).uploadFile(any());
     }
 
     @Test

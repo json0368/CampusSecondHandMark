@@ -29,12 +29,14 @@ import com.cshm.campussecondhandmark.module.product.service.ProductInteractionSe
 import com.cshm.campussecondhandmark.module.product.service.ProductService;
 import com.cshm.campussecondhandmark.module.user.pojo.entity.User;
 import com.cshm.campussecondhandmark.module.user.mapper.UserMapper;
+import com.cshm.campussecondhandmark.module.user.service.support.UserAccessValidator;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -59,23 +61,27 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     private UserMapper userMapper;
     @Autowired
     private ProductInteractionService productInteractionService;
+    @Autowired
+    private UserAccessValidator userAccessValidator;
 
     // ==================== 公开接口 ====================
 
     @Override
     @Transactional
     public Long createProduct(Long currentUserId, ProductCreateDTO dto) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
+        ValidatedProductCreateInput validatedInput = validateCreateInput(dto);
         ProductCategory category = getCategoryOrThrow(dto.getCategoryId());
         LocalDateTime now = LocalDateTime.now();
 
         Product product = new Product();
         product.setSellerId(currentUserId);
         product.setCategoryId(category.getId());
-        product.setTitle(trimToNull(dto.getTitle()));
-        product.setDescription(trimToNull(dto.getDescription()));
-        product.setPrice(dto.getPrice());
-        product.setConditionLevel(ProductConditionEnum.fromCode(dto.getConditionLevel()));
-        product.setCoverImageUrl(dto.getImageUrls().get(0));
+        product.setTitle(validatedInput.title);
+        product.setDescription(validatedInput.description);
+        product.setPrice(validatedInput.price);
+        product.setConditionLevel(validatedInput.conditionLevel);
+        product.setCoverImageUrl(validatedInput.imageUrls.get(0));
         product.setAuditStatus(ProductAuditStatusEnum.PENDING);
         product.setSaleStatus(ProductSaleStatusEnum.DRAFT);
         product.setCreateTime(now);
@@ -84,36 +90,37 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         if (!save(product)) {
             throw new BaseException("商品发布失败");
         }
-        saveImages(product.getId(), dto.getImageUrls(), now);
+        saveImages(product.getId(), validatedInput.imageUrls, now);
         return product.getId();
     }
 
     @Override
     @Transactional
     public void updateProduct(Long currentUserId, Long productId, ProductUpdateDTO dto) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
+        ValidatedProductUpdateInput validatedInput = validateUpdateInput(dto);
         Product product = getProductOrThrow(productId);
         validateSeller(currentUserId, product);
         validateCanEdit(product);
 
-        if (dto.getCategoryId() != null) {
-            product.setCategoryId(getCategoryOrThrow(dto.getCategoryId()).getId());
+        if (validatedInput.categoryId != null) {
+            product.setCategoryId(getCategoryOrThrow(validatedInput.categoryId).getId());
         }
-        if (dto.getTitle() != null) {
-            product.setTitle(trimToNull(dto.getTitle()));
+        if (validatedInput.titleSpecified) {
+            product.setTitle(validatedInput.title);
         }
-        if (dto.getDescription() != null) {
-            product.setDescription(trimToNull(dto.getDescription()));
+        if (validatedInput.descriptionSpecified) {
+            product.setDescription(validatedInput.description);
         }
-        if (dto.getPrice() != null) {
-            product.setPrice(dto.getPrice());
+        if (validatedInput.price != null) {
+            product.setPrice(validatedInput.price);
         }
-        if (dto.getConditionLevel() != null) {
-            product.setConditionLevel(ProductConditionEnum.fromCode(dto.getConditionLevel()));
+        if (validatedInput.conditionLevel != null) {
+            product.setConditionLevel(validatedInput.conditionLevel);
         }
 
-        List<String> imageUrls = dto.getImageUrls();
-        if (imageUrls != null) {
-            product.setCoverImageUrl(imageUrls.get(0));
+        if (validatedInput.imageUrls != null) {
+            product.setCoverImageUrl(validatedInput.imageUrls.get(0));
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -128,8 +135,8 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         if (!updateById(product)) {
             throw new BaseException("商品更新失败");
         }
-        if (imageUrls != null) {
-            replaceImages(productId, imageUrls, now);
+        if (validatedInput.imageUrls != null) {
+            replaceImages(productId, validatedInput.imageUrls, now);
         }
     }
 
@@ -177,13 +184,14 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         }
         ProductDetailVO vo = buildProductDetailVO(product, currentUserId, visible);
         if (visible && currentUserId != null && !seller) {
-            productInteractionService.recordBrowseHistory(currentUserId, productId);
+            productInteractionService.recordBrowseHistory(currentUserId, product);
         }
         return vo;
     }
 
     @Override
     public PageResult<MyProductVO> pageMyProducts(Long currentUserId, ProductQueryDTO dto) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         Page<Product> page = new Page<>(normalizePageNum(dto.getPageNum()), normalizePageSize(dto.getPageSize()));
         LambdaQueryWrapper<Product> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(Product::getSellerId, currentUserId);
@@ -261,6 +269,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     @Override
     @Transactional
     public void offShelfProduct(Long currentUserId, Long productId) {
+        userAccessValidator.getNormalUserOrThrow(currentUserId);
         Product product = getProductOrThrow(productId);
         validateSeller(currentUserId, product);
 
@@ -489,10 +498,147 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         return Math.min(pageSize, MAX_PAGE_SIZE);
     }
 
+    private ValidatedProductCreateInput validateCreateInput(ProductCreateDTO dto) {
+        if (dto == null) {
+            throw new BaseException("商品发布参数不能为空");
+        }
+        if (dto.getCategoryId() == null) {
+            throw new BaseException("商品分类不能为空");
+        }
+        return new ValidatedProductCreateInput(
+                requireTitle(dto.getTitle()),
+                trimToNull(dto.getDescription()),
+                requirePositivePrice(dto.getPrice()),
+                requireConditionLevel(dto.getConditionLevel()),
+                requireImageUrls(dto.getImageUrls()));
+    }
+
+    private ValidatedProductUpdateInput validateUpdateInput(ProductUpdateDTO dto) {
+        if (dto == null) {
+            throw new BaseException("商品修改参数不能为空");
+        }
+        String title = null;
+        if (dto.getTitle() != null) {
+            title = requireTitle(dto.getTitle());
+        }
+        BigDecimal price = null;
+        if (dto.getPrice() != null) {
+            price = requirePositivePrice(dto.getPrice());
+        }
+        ProductConditionEnum conditionLevel = null;
+        if (dto.getConditionLevel() != null) {
+            conditionLevel = requireConditionLevel(dto.getConditionLevel());
+        }
+        List<String> imageUrls = null;
+        if (dto.getImageUrls() != null) {
+            imageUrls = requireImageUrls(dto.getImageUrls());
+        }
+        return new ValidatedProductUpdateInput(
+                dto.getCategoryId(),
+                dto.getTitle() != null,
+                title,
+                dto.getDescription() != null,
+                trimToNull(dto.getDescription()),
+                price,
+                conditionLevel,
+                imageUrls);
+    }
+
+    private String requireTitle(String title) {
+        String trimmedTitle = trimToNull(title);
+        if (trimmedTitle == null) {
+            throw new BaseException("商品标题不能为空");
+        }
+        return trimmedTitle;
+    }
+
+    private BigDecimal requirePositivePrice(BigDecimal price) {
+        if (price == null) {
+            throw new BaseException("商品价格不能为空");
+        }
+        if (price.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BaseException("商品价格必须大于0");
+        }
+        return price;
+    }
+
+    private ProductConditionEnum requireConditionLevel(Integer conditionLevelCode) {
+        ProductConditionEnum conditionLevel = ProductConditionEnum.fromCode(conditionLevelCode);
+        if (conditionLevel == null || conditionLevel == ProductConditionEnum.UNKNOWN) {
+            throw new BaseException("商品成色不正确");
+        }
+        return conditionLevel;
+    }
+
+    private List<String> requireImageUrls(List<String> imageUrls) {
+        if (imageUrls == null || imageUrls.isEmpty()) {
+            throw new BaseException("商品图片不能为空");
+        }
+        List<String> normalizedImageUrls = imageUrls.stream()
+                .map(this::trimToNull)
+                .filter(Objects::nonNull)
+                .toList();
+        if (normalizedImageUrls.isEmpty()) {
+            throw new BaseException("商品图片不能为空");
+        }
+        return normalizedImageUrls;
+    }
+
     private String trimToNull(String value) {
         if (!StringUtils.hasText(value)) {
             return null;
         }
         return value.trim();
+    }
+
+    private static class ValidatedProductCreateInput {
+
+        private final String title;
+        private final String description;
+        private final BigDecimal price;
+        private final ProductConditionEnum conditionLevel;
+        private final List<String> imageUrls;
+
+        private ValidatedProductCreateInput(String title,
+                                            String description,
+                                            BigDecimal price,
+                                            ProductConditionEnum conditionLevel,
+                                            List<String> imageUrls) {
+            this.title = title;
+            this.description = description;
+            this.price = price;
+            this.conditionLevel = conditionLevel;
+            this.imageUrls = imageUrls;
+        }
+    }
+
+    private static class ValidatedProductUpdateInput {
+
+        private final Long categoryId;
+        private final boolean titleSpecified;
+        private final String title;
+        private final boolean descriptionSpecified;
+        private final String description;
+        private final BigDecimal price;
+        private final ProductConditionEnum conditionLevel;
+        private final List<String> imageUrls;
+
+        private ValidatedProductUpdateInput(Long categoryId,
+                                            boolean titleSpecified,
+                                            String title,
+                                            boolean descriptionSpecified,
+                                            String description,
+                                            BigDecimal price,
+                                            ProductConditionEnum conditionLevel,
+                                            List<String> imageUrls) {
+            this.categoryId = categoryId;
+            this.titleSpecified = titleSpecified;
+            this.title = title;
+            this.descriptionSpecified = descriptionSpecified;
+            this.description = description;
+            this.price = price;
+            this.conditionLevel = conditionLevel;
+            this.imageUrls = imageUrls;
+        }
     }
 }

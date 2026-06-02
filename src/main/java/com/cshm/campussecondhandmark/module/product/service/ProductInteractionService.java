@@ -2,6 +2,7 @@ package com.cshm.campussecondhandmark.module.product.service;
 
 import com.cshm.campussecondhandmark.common.result.PageResult;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductQueryDTO;
+import com.cshm.campussecondhandmark.module.product.pojo.entity.Product;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductSummaryVO;
 
 public interface ProductInteractionService {
@@ -13,6 +14,8 @@ public interface ProductInteractionService {
     PageResult<ProductSummaryVO> pageMyFavorites(Long currentUserId, ProductQueryDTO dto);
 
     void recordBrowseHistory(Long currentUserId, Long productId);
+
+    void recordBrowseHistory(Long currentUserId, Product product);
 
     PageResult<ProductSummaryVO> pageMyBrowseHistory(Long currentUserId, ProductQueryDTO dto);
 

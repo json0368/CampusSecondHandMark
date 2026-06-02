@@ -2,6 +2,7 @@ package com.cshm.campussecondhandmark.module.user.controller;
 
 import com.cshm.campussecondhandmark.common.context.BaseContext;
 import com.cshm.campussecondhandmark.common.result.Result;
+import com.cshm.campussecondhandmark.common.service.ImageService;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.ForgotPasswordCodeSendDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.ForgotPasswordResetDTO;
 import com.cshm.campussecondhandmark.module.user.pojo.dto.RegisterCodeSendDTO;
@@ -24,7 +25,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @Slf4j
@@ -33,6 +36,9 @@ public class UserController {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private ImageService imageService;
 
     @PostMapping("/api/auth/login")
     @ApiOperation(value = "用户登录", notes = "当前版本仅支持邮箱加密码登录")
@@ -112,5 +118,14 @@ public class UserController {
         log.info("更新当前登录用户资料，用户ID={}", currentUserId);
         userService.updateProfile(currentUserId, userProfileUpdateDTO);
         return Result.success();
+    }
+
+    @PostMapping("/api/user/avatar/upload")
+    @ApiOperation("上传当前登录用户头像，返回头像地址")
+    @ApiImplicitParam(name = "token", value = "用户登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
+    public Result<String> uploadAvatar(@RequestParam MultipartFile file) {
+        Long currentUserId = BaseContext.getCurrentId();
+        log.info("上传用户头像，用户ID={}", currentUserId);
+        return Result.success(imageService.uploadFile(file));
     }
 }
