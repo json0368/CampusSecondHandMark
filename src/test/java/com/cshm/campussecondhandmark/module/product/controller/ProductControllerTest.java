@@ -2,9 +2,11 @@ package com.cshm.campussecondhandmark.module.product.controller;
 
 import com.cshm.campussecondhandmark.common.context.BaseContext;
 import com.cshm.campussecondhandmark.common.result.PageResult;
+import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductConversationOpenVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.MyProductVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductDetailVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductSummaryVO;
+import com.cshm.campussecondhandmark.module.product.service.ProductConversationService;
 import com.cshm.campussecondhandmark.module.product.service.ProductInteractionService;
 import com.cshm.campussecondhandmark.module.product.service.ProductService;
 import org.junit.jupiter.api.AfterEach;
@@ -43,6 +45,9 @@ class ProductControllerTest {
     @Mock
     private ProductInteractionService productInteractionService;
 
+    @Mock
+    private ProductConversationService productConversationService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -50,6 +55,7 @@ class ProductControllerTest {
         ProductController productController = new ProductController();
         ReflectionTestUtils.setField(productController, "productService", productService);
         ReflectionTestUtils.setField(productController, "productInteractionService", productInteractionService);
+        ReflectionTestUtils.setField(productController, "productConversationService", productConversationService);
         mockMvc = MockMvcBuilders.standaloneSetup(productController)
                 .setValidator(noopValidator())
                 .build();
@@ -186,6 +192,26 @@ class ProductControllerTest {
         verify(productInteractionService).pageMyFavorites(eq(3L), any());
         verify(productInteractionService).pageMyBrowseHistory(eq(3L), any());
         verify(productInteractionService).clearMyBrowseHistory(3L);
+    }
+
+    @Test
+    void openConversationShouldUseApiProductsConversationPath() throws Exception {
+        BaseContext.setCurrentId(3L);
+        ProductConversationOpenVO openVO = new ProductConversationOpenVO();
+        openVO.setConversationId("pc_20260602_001");
+        openVO.setMatrixRoomId("!roomid:im.example.com");
+        openVO.setChatTicket("ticket_001");
+        openVO.setTicketExpireSeconds(60);
+
+        when(productConversationService.openConversation(3L, 10L)).thenReturn(openVO);
+
+        mockMvc.perform(post("/api/products/10/conversation"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1))
+                .andExpect(jsonPath("$.data.conversationId").value("pc_20260602_001"))
+                .andExpect(jsonPath("$.data.chatTicket").value("ticket_001"));
+
+        verify(productConversationService).openConversation(3L, 10L);
     }
 
     private Validator noopValidator() {

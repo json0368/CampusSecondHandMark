@@ -9,8 +9,10 @@ import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductQueryDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductSearchDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.dto.ProductUpdateDTO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.MyProductVO;
+import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductConversationOpenVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductDetailVO;
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductSummaryVO;
+import com.cshm.campussecondhandmark.module.product.service.ProductConversationService;
 import com.cshm.campussecondhandmark.module.product.service.ProductInteractionService;
 import com.cshm.campussecondhandmark.module.product.service.ProductService;
 import io.swagger.annotations.Api;
@@ -33,6 +35,9 @@ public class ProductController {
 
     @Autowired
     private ProductInteractionService productInteractionService;
+
+    @Autowired
+    private ProductConversationService productConversationService;
 
     @Autowired
     private ImageService imageService;
@@ -144,6 +149,16 @@ public class ProductController {
         log.info("清空我的浏览历史，用户ID={}", currentUserId);
         productInteractionService.clearMyBrowseHistory(currentUserId);
         return Result.success();
+    }
+
+    @PostMapping("/{productId}/conversation")
+    @ApiOperation("开通商品会话，用于联系卖家")
+    @ApiImplicitParam(name = "token", value = "用户登录令牌", required = true, paramType = "header", dataTypeClass = String.class)
+    public Result<ProductConversationOpenVO> openConversation(
+            @ApiParam(value = "商品 ID", required = true, example = "10") @PathVariable Long productId) {
+        Long currentUserId = BaseContext.getCurrentId();
+        log.info("开通商品会话，用户ID={}，商品ID={}", currentUserId, productId);
+        return Result.success(productConversationService.openConversation(currentUserId, productId));
     }
 
     @PostMapping("/images/upload")
