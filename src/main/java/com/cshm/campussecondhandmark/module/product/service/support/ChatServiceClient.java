@@ -6,6 +6,7 @@ import com.cshm.campussecondhandmark.module.product.pojo.dto.ChatConversationOpe
 import com.cshm.campussecondhandmark.module.product.pojo.vo.ProductConversationOpenVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -29,6 +30,7 @@ public class ChatServiceClient {
     private final ChatServiceProperties chatServiceProperties;
     private final RestOperations restOperations;
 
+    @Autowired
     public ChatServiceClient(ChatServiceProperties chatServiceProperties, RestTemplateBuilder restTemplateBuilder) {
         this(chatServiceProperties, restTemplateBuilder
                 .setConnectTimeout(Duration.ofMillis(normalizeTimeout(chatServiceProperties.getConnectTimeoutMs(), DEFAULT_CONNECT_TIMEOUT_MS)))
