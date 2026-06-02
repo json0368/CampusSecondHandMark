@@ -198,18 +198,24 @@ class ProductControllerTest {
     void openConversationShouldUseApiProductsConversationPath() throws Exception {
         BaseContext.setCurrentId(3L);
         ProductConversationOpenVO openVO = new ProductConversationOpenVO();
-        openVO.setConversationId("pc_20260602_001");
-        openVO.setMatrixRoomId("!roomid:im.example.com");
-        openVO.setChatTicket("ticket_001");
-        openVO.setTicketExpireSeconds(60);
+        openVO.setBuyerId(3L);
+        openVO.setBuyerNickname("买家同学");
+        openVO.setBuyerAvatarUrl("https://example.com/avatar/3.png");
+        openVO.setSellerId(10L);
+        openVO.setSellerNickname("卖家同学");
+        openVO.setSellerAvatarUrl("https://example.com/avatar/10.png");
+        openVO.setProductId(10L);
+        openVO.setProductTitle("高等数学教材");
+        openVO.setProductCoverUrl("https://example.com/product/10-cover.jpg");
 
         when(productConversationService.openConversation(3L, 10L)).thenReturn(openVO);
 
         mockMvc.perform(post("/api/products/10/conversation"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(1))
-                .andExpect(jsonPath("$.data.conversationId").value("pc_20260602_001"))
-                .andExpect(jsonPath("$.data.chatTicket").value("ticket_001"));
+                .andExpect(jsonPath("$.data.buyerId").value(3))
+                .andExpect(jsonPath("$.data.sellerNickname").value("卖家同学"))
+                .andExpect(jsonPath("$.data.productTitle").value("高等数学教材"));
 
         verify(productConversationService).openConversation(3L, 10L);
     }

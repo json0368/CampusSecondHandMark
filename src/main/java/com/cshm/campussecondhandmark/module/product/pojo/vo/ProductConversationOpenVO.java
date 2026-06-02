@@ -8,15 +8,30 @@ import lombok.Data;
 @ApiModel(description = "商品会话开通结果")
 public class ProductConversationOpenVO {
 
-    @ApiModelProperty(value = "会话 ID")
-    private String conversationId;
+    @ApiModelProperty(value = "买家用户 ID")
+    private Long buyerId;
 
-    @ApiModelProperty(value = "Matrix 房间 ID")
-    private String matrixRoomId;
+    @ApiModelProperty(value = "买家昵称")
+    private String buyerNickname;
 
-    @ApiModelProperty(value = "聊天短期凭证")
-    private String chatTicket;
+    @ApiModelProperty(value = "买家头像 URL")
+    private String buyerAvatarUrl;
 
-    @ApiModelProperty(value = "凭证有效秒数")
-    private Integer ticketExpireSeconds;
+    @ApiModelProperty(value = "卖家用户 ID")
+    private Long sellerId;
+
+    @ApiModelProperty(value = "卖家昵称")
+    private String sellerNickname;
+
+    @ApiModelProperty(value = "卖家头像 URL")
+    private String sellerAvatarUrl;
+
+    @ApiModelProperty(value = "商品 ID")
+    private Long productId;
+
+    @ApiModelProperty(value = "商品标题")
+    private String productTitle;
+
+    @ApiModelProperty(value = "商品封面 URL")
+    private String productCoverUrl;
 }
